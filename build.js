@@ -29,9 +29,20 @@ function list(dir) {
 
 const shell = ['./', ...list(DIST).map((p) => `./${relative(DIST, p)}`).filter((p) => p !== './sw.js' && !p.endsWith('LICENSE') && !p.endsWith('VERSION'))];
 
+// Every deploy gets fresh module URLs (…/x.js?v=<build>). GitHub Pages lets
+// browsers cache files for 10 minutes, and without this a reload right
+// after a deploy can mix old and new modules (and fail to start).
+const version = (text) => text.replace(/(['"])(\.\.?\/[^'"\s]+?\.js)\1/g, `$1$2?v=${build}$1`);
+for (const file of list(DIST).filter((p) => p.endsWith('.js') && !p.endsWith('sw.js'))) {
+  writeFileSync(file, version(readFileSync(file, 'utf8')));
+}
+
 const sw = readFileSync(join(DIST, 'sw.js'), 'utf8').replace('__BUILD__', build).replace('"__SHELL_FILES__"', JSON.stringify(shell));
 writeFileSync(join(DIST, 'sw.js'), sw);
-const html = readFileSync(join(DIST, 'index.html'), 'utf8').replaceAll('__BUILD__', build);
+const html = readFileSync(join(DIST, 'index.html'), 'utf8')
+  .replaceAll('__BUILD__', build)
+  .replace('src="js/main.js"', `src="js/main.js?v=${build}"`)
+  .replace('href="styles.css"', `href="styles.css?v=${build}"`);
 writeFileSync(join(DIST, 'index.html'), html);
 
 console.log(`built dist/ (${shell.length} files, build ${build})`);

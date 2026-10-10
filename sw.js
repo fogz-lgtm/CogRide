@@ -34,7 +34,8 @@ self.addEventListener('fetch', (event) => {
       (async () => {
         const cache = await caches.open(CACHE);
         const key = request.mode === 'navigate' ? './index.html' : request;
-        const hit = await cache.match(key, { ignoreSearch: request.mode === 'navigate' });
+        // Module URLs carry ?v=<build>; this cache is already per build.
+        const hit = await cache.match(key, { ignoreSearch: true });
         return hit || fetch(request);
       })(),
     );
