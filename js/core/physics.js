@@ -3,29 +3,37 @@
 // carry speed over rollers, build it on descents and bleed it on climbs instead
 // of snapping to a steady-state number.
 
-export const G = 9.80665;
+// Constants follow Zwift's own model (recovered from game data and checked
+// against Zwift Insider's bot speed tests to within ~1–2%): fixed air
+// density, no drivetrain loss, CdA from rider height and weight plus a small
+// per-bike bias, Crr by surface.
+export const G = 9.81;
+export const AIR_DENSITY = 1.226;
 
 export const DEFAULT_RIDER = {
   riderKg: 75,
   heightCm: 178,
-  bikeKg: 8,
+  bikeKg: 7.4, // Zwift Carbon frame + 32mm carbon wheels
+  bikeCdaBias: 0.012,
 };
 
-// Rolling resistance by surface (road tyres).
+// Rolling resistance by surface for road tyres (Zwift's table).
 export const CRR = {
   tarmac: 0.004,
   brick: 0.0055,
   wood: 0.0065,
-  cobbles: 0.0085,
+  cobbles: 0.0065,
+  snow: 0.0055,
   gravel: 0.012,
-  dirt: 0.025,
+  dirt: 0.016,
+  grass: 0.025,
 };
 
-// Frontal area x drag coefficient from rider size: drops-ish road position.
-// Fit to published bike-fit data; taller/heavier riders punch a bigger hole.
-export function estimateCdA(heightCm, massKg) {
-  const h = heightCm / 100;
-  return 0.0293 * h ** 0.725 * massKg ** 0.425 + 0.0604;
+// Rider frontal drag area from height (cm) and weight (kg), as in Zwift:
+// 183 cm / 75 kg on the default bike comes out at ~0.316 m².
+export function estimateCdA(heightCm, massKg, bikeCdaBias = DEFAULT_RIDER.bikeCdaBias) {
+  const area = 0.003014024 * heightCm ** 0.655 * massKg ** 0.44 - 0.1159;
+  return 0.5 * AIR_DENSITY * area + bikeCdaBias;
 }
 
 export function airDensity(altitudeM = 0, temperatureC = 20) {
@@ -48,14 +56,15 @@ export class RiderPhysics {
     heightCm = DEFAULT_RIDER.heightCm,
     bikeKg = DEFAULT_RIDER.bikeKg,
     cda,
+    bikeCdaBias = DEFAULT_RIDER.bikeCdaBias,
     crr = CRR.tarmac,
-    drivetrainEfficiency = 0.975,
+    drivetrainEfficiency = 1,
     wheelInertiaKg = 1.4, // rotating wheels act like extra mass when speeding up
     maxSpeed = 120 / 3.6,
     useAltitudeDensity = false,
   } = {}) {
     this.massKg = riderKg + bikeKg;
-    this.cda = cda ?? estimateCdA(heightCm, riderKg);
+    this.cda = cda ?? estimateCdA(heightCm, riderKg, bikeCdaBias);
     this.crr = crr;
     this.drivetrainEfficiency = drivetrainEfficiency;
     this.effectiveMass = this.massKg + wheelInertiaKg;
@@ -66,7 +75,7 @@ export class RiderPhysics {
   // Resistive forces (N) at speed v on gradient (fraction, 0.05 = 5%).
   resistance(v, grade, altitudeM = 0) {
     const angle = Math.atan(grade);
-    const rho = this.useAltitudeDensity ? airDensity(altitudeM) : 1.225;
+    const rho = this.useAltitudeDensity ? airDensity(altitudeM) : AIR_DENSITY;
     const gravity = this.massKg * G * Math.sin(angle);
     const rolling = this.massKg * G * this.crr * Math.cos(angle) * Math.sign(v || 1);
     const aero = 0.5 * rho * this.cda * v * Math.abs(v);
