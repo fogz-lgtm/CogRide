@@ -591,7 +591,7 @@ export class Controller extends EventTarget {
     }
     const hrZones = [0, 0, 0, 0, 0];
     for (const s of hrs) hrZones[hrZoneIndex(s.heartRate, prefs.hrZones) ?? 0]++;
-    const headline = rideHeadline({ plan, route, minutes, summited, laps, zoneShare, rampFtp, liftedBefore, workoutDone });
+    const headline = rideHeadline({ plan, route, minutes, summited, laps, zoneShare, rampFtp, liftedBefore, workoutDone, distanceM: summary.distanceM, units: prefs.units });
     const fit = encodeActivity(samples, { summary, ftp: prefs.ftp });
     const id = `cogride-${startedAt}`;
     const name = activityName(plan, route, minutes);

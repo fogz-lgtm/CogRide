@@ -267,8 +267,8 @@ export function SettingsSheet({ c, s }) {
       <//>
       <${Row} title="Zone 2 heart rate" sub="Autopilot keeps you here">
         <span class="pair">
-          <${NumField} value=${z.min} width="38px" onCommit=${(v) => Number(v) > 60 && Number(v) < z.max && setZone2(Number(v), z.max)} />
-          <${NumField} value=${z.max} width="38px" unit="bpm" onCommit=${(v) => Number(v) > z.min && Number(v) < 220 && setZone2(z.min, Number(v))} />
+          <${NumField} value=${z.min} width="46px" onCommit=${(v) => Number(v) > 60 && Number(v) < z.max && setZone2(Number(v), z.max)} />
+          <${NumField} value=${z.max} width="46px" unit="bpm" onCommit=${(v) => Number(v) > z.min && Number(v) < 220 && setZone2(z.min, Number(v))} />
         </span>
       <//>
     </div>

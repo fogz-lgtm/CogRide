@@ -105,9 +105,9 @@ export function WorkoutProfile({ workout, clock = 0, className = 'wprofile', sho
   const clipId = `wp${hashString(workout.id || workout.name || 'w')}`;
   return html`<svg ref=${ref} class=${className} viewBox="0 0 ${w} ${h}" aria-hidden="true">
     <defs><clipPath id=${clipId}><rect x="0" y="0" width=${px} height=${h} /></clipPath></defs>
-    ${shapes.map((s) => html`<path d=${s.d} fill=${s.color} opacity=".3" />`)}
-    <g clip-path="url(#${clipId})">${shapes.map((s) => html`<path d=${s.d} fill=${s.color} opacity=".95" />`)}</g>
-    ${cur && html`<line x1=${cur.x0} y1=${cur.y0 - 1} x2=${cur.x1} y2=${cur.y1 - 1} stroke="var(--paper)" stroke-width="2" />`}
+    ${shapes.map((s) => html`<path d=${s.d} fill=${s.color} opacity=${showPlayhead ? 0.3 : 0.9} />`)}
+    ${showPlayhead && html`<g clip-path="url(#${clipId})">${shapes.map((s) => html`<path d=${s.d} fill=${s.color} opacity=".95" />`)}</g>`}
+    ${showPlayhead && cur && html`<line x1=${cur.x0} y1=${cur.y0 - 1} x2=${cur.x1} y2=${cur.y1 - 1} stroke="var(--paper)" stroke-width="2" />`}
     ${showPlayhead && html`<line x1=${px} x2=${px} y1="0" y2=${h} stroke="var(--paper)" stroke-width="1.5" /><circle cx=${px} cy="3.5" r="3.5" fill="var(--paper)" />`}
   </svg>`;
 }

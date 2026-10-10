@@ -196,12 +196,12 @@ function HrHelm({ c, snap }) {
 
 // ---------------------------------------------------------------- hero bits
 
-function ZoneBar({ fraction, dim }) {
+function ZoneBar({ fraction, zone = null, dim }) {
   // Six segments spanning 30–150 % FTP.
   const lo = 0.3;
   const hi = 1.5;
   const edges = [lo, 0.56, 0.76, 0.91, 1.06, 1.21, hi];
-  const zi = fraction != null ? powerZone(fraction) : -1;
+  const zi = zone ?? (fraction != null ? powerZone(fraction) : -1);
   const mark = fraction != null ? Math.max(0, Math.min(1, (fraction - lo) / (hi - lo))) : null;
   return html`<div class=${`zonebar ${dim ? 'dim' : ''}`}>
     ${POWER_ZONES.map((z, i) => html`<i class=${i === zi ? 'on' : ''} style=${{ background: z.color, flexGrow: edges[i + 1] - edges[i] }}></i>`)}
@@ -223,7 +223,7 @@ function PowerHero({ snap, ftp, dimBar }) {
   return html`<div class="hero">
     <div class="k"><span>Power</span>${z && html`<span style=${{ color: z.color }}>Z${z.n} · ${z.name} · ${Math.round(f * 100)} %</span>`}</div>
     <${Num} v=${snap.power} u="W" />
-    <${ZoneBar} fraction=${snap.power > 0 ? f : null} dim=${dimBar} />
+    <${ZoneBar} fraction=${snap.power > 0 ? f : null} zone=${zi} dim=${dimBar} />
   </div>`;
 }
 

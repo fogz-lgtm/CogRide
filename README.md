@@ -1,55 +1,95 @@
 # CogRide
 
-Indoor cycling for a **Zwift Cog + Zwift Click** on a smart trainer (built for a
-Wahoo KICKR CORE 2): virtual shifting, structured workouts, calm 3D routes, and
-automatic Strava uploads. A static web app hosted free on GitHub Pages, with
-no backend and no subscription.
+Indoor cycling for a **Zwift Cog + Zwift Click** on a smart trainer, built for
+a Wahoo KICKR CORE 2 ridden from an iPhone. It's a static web app hosted free on
+GitHub Pages, with no backend and no subscription.
 
 **App:** https://fogz-lgtm.github.io/CogRide/
+
+## What it does
+
+- **Virtual shifting that feels like Zwift's.** 24 gears with Zwift's ratios,
+  starting in gear 8. Shifts go to the trainer's own virtual shifting over
+  Zwift's protocol, the way Zwift does it; on firmware without it, CogRide
+  falls back to standard FTMS and shifts in software. Road physics follow
+  Zwift's published model: CdA from height and weight, Trainer
+  Difficulty at 50 %, auto-brake and the super tuck on descents.
+- **Click and Click v2.** Plus is harder, minus is easier, and holding repeats.
+  Hold both together to pause or resume. Connect each v2 puck on its own. If
+  the left puck locks itself after a Zwift session, CogRide restarts it.
+- **Real climbs in 3D:** Alpe d'Huez, Ventoux, Tourmalet, Stelvio, Sa Calobra,
+  Mount Diablo, Mount Tam, Old La Honda, Claremont, South Park, Hawk Hill. Each
+  follows its real road and real elevation. There are also four calm loops,
+  your own GPX files, and your Strava runs and hikes as rides.
+- **Workouts in ERG.** Built-in workouts, your own (a one-line-per-block text
+  format), or Zwift `.zwo` files. A Click nudges the target 1 % of FTP. If you
+  stop pedalling, ERG backs off instead of spiralling.
+- **Zone 2 autopilot.** You pedal, and CogRide holds the watts. It nudges them
+  so your heart rate stays in your Zone 2 band, easing off as cardiac drift
+  pushes it up. A Click moves the target ±2 bpm.
+- **FTP ramp test.** The test ends by itself when your cadence collapses, and
+  your FTP is 75 % of your best minute.
+- **TV mode.** Play a show in any app with Picture in Picture and park it in
+  the marked area; CogRide stays in front so the trainer stays connected. Big
+  numbers sit under the show. At each interval change, the area around the
+  show floods with the next zone's colour.
+- **Strava.** Rides upload by themselves as virtual rides marked "trainer".
+  CogRide reads your weight, FTP and heart-rate zones from your Strava
+  profile, notices when you lifted that day, and picks an easy ride to match.
+- **Doesn't lose rides.** The ride is checkpointed every 30 s; if the page
+  reloads mid-ride, Home offers to save it. Every ride exports as `.fit`.
 
 ## Use it on iPhone
 
 Safari can't talk to Bluetooth devices, so open the app in **Bluefy**, a free
-Web Bluetooth browser from the App Store. Open the link above in Bluefy and
-bookmark it. Chrome or Edge on a Mac, PC or Android phone work too.
+Web Bluetooth browser from the App Store. Open the link above in Bluefy,
+bookmark it, and turn on Bluefy's full-screen mode. Chrome or Edge on a Mac,
+PC or Android phone work too.
 
-Before pairing, close Zwift and the Zwift Companion app: a Bluetooth device
-usually talks to only one app at a time.
+1. Close Zwift, Zwift Companion and the Wahoo app. A trainer takes orders from
+   one app at a time.
+2. On the Coros Pace 3, turn on **Settings › Heart Rate Broadcast**. The watch
+   talks to one app at a time, and not while it has other sensors paired.
+   CogRide records the ride, so don't also save one on the watch, or you'll get
+   two activities on Strava.
+3. Tap the **Trainer**, **Click** and **Heart** tiles on Home. For the Click,
+   press a button on it so it shows up in the list.
+4. Pick something to ride. It starts when you start pedalling.
 
-## How this repo hosts the app
+The screen stays awake during a ride. If it dims anyway, set iOS Auto-Lock to
+Never for the session. Interval cues are quiet Web Audio sounds that mix under
+your show without pausing it; they follow the ring/silent switch.
 
-Every push to `main` runs `.github/workflows/deploy-pages.yml`. It runs the
-tests, copies the app into `dist/` with `build.js` (stamping a build id into
-the service worker), and publishes it to GitHub Pages. The service worker
-makes the app open instantly and work offline. When a new version lands, it
-waits and offers "Update ready" between rides, so the app never reloads
-mid-ride.
-
-One-time setup (repo owner, in Settings): the repo must be **public** (free
-accounts can only use Pages on public repos), and **Settings → Pages → Source**
-must be set to **"GitHub Actions"**. If the first workflow run failed before
-that, re-run it from the Actions tab.
+Try it without hardware: <https://fogz-lgtm.github.io/CogRide/?sim> uses a
+simulated trainer and rider (↑/↓ shift, W/S changes how hard the pretend rider
+pushes). The `?sim&demo=route:alpe-dhuez&at=4200` URL jumps straight into a
+ride.
 
 ## Connect Strava (optional)
 
-Rides upload to Strava automatically when you finish. Like OnPace, this works
-without a backend: you use your own free Strava API application, and its
-credentials live only on your device.
+Like OnPace, this works without a backend: you use your own Strava API
+application, and its credentials live only in this browser on your device.
 
 1. Reuse your OnPace Strava app, or create one at
-   https://www.strava.com/settings/api (any name; category "Training"). Its
-   **Authorization Callback Domain** must be exactly `fogz-lgtm.github.io`.
-   That one domain covers both OnPace and CogRide.
-2. In CogRide (inside Bluefy: Bluefy doesn't share storage with Safari), open
-   **Settings → Strava**, paste the app's **Client ID** and **Client Secret**,
-   and tap **Connect Strava**.
-3. Approve on Strava, leaving every permission ticked. CogRide needs upload
-   permission to post rides, and profile access to read your weight, FTP and
-   heart-rate zones.
+   https://www.strava.com/settings/api. Its **Authorization Callback Domain**
+   must be exactly `fogz-lgtm.github.io`, and that one domain covers both OnPace
+   and CogRide.
+2. In CogRide, open **Settings → Strava** and paste the app's **Client ID**
+   and **Client Secret**. Do this inside Bluefy, which doesn't share storage
+   with Safari. Then tap **Connect Strava**.
+3. Approve on Strava and leave every permission ticked.
 
-Rides that can't upload right away (no signal, Strava down) wait on the device
-and retry on the next launch. Every ride can also be exported as a `.fit`
-file.
+If a ride can't upload right away (no signal, or Strava is down), it waits on
+the phone. CogRide retries after 30 s, 2 min and 10 min, then again the next
+time the app opens.
+
+## How this repo hosts the app
+
+Every push to `main` runs `.github/workflows/deploy-pages.yml`. The workflow
+runs the tests, then `build.js` copies the app into `dist/` and stamps a build
+id into the service worker. The result is published to GitHub Pages. When a
+new version lands, Home offers it between rides, so the app never reloads
+mid-ride.
 
 ## Develop
 
@@ -59,6 +99,17 @@ npm test        # unit tests (Node 20+)
 npm start       # serves the app at http://localhost:8080
 ```
 
-There's no bundler; the app is plain ES modules. Web Bluetooth needs HTTPS or
-`localhost`. Pick **Trainer → Use simulator** to try everything without
-hardware.
+There's no bundler: the app is plain ES modules, with Preact + htm, three.js
+and the fonts vendored. Layout:
+
+- `js/core`: physics, gearing, routes, autopilot, ramp test, FIT
+- `js/devices`: Bluetooth, the Zwift protocol and Click, FTMS, HR, simulator
+- `js/engine`: the ride engine
+- `js/world`: the three.js world
+- `js/app`: the controller, preferences, plans and history
+- `js/ui`: the screens
+
+`dev/world.html?route=alpe-dhuez&tod=dusk` previews the 3D world on its own.
+
+Route data: © OpenStreetMap contributors (ODbL); elevation from AWS Terrain
+Tiles. See `data/routes/ATTRIBUTION.md`.

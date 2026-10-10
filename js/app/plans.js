@@ -8,7 +8,7 @@ const PRESET_SOURCES = [
   {
     id: 'post-lift-flush',
     name: 'Post-lift flush',
-    description: 'Thirty-five easy minutes to move blood through heavy legs. Light gears, quick feet, nothing hard.',
+    description: 'Thirty easy minutes to move blood through heavy legs. Light gears, quick feet, nothing hard.',
     text: `5m 40-50% Easy start
 3x 6m 55% Easy spin 90 rpm, 1m 58% Quick feet 105 rpm
 4m 50-40% Cool down`,
@@ -71,7 +71,7 @@ export function tonightsPick({ liftedRecently = false, lastRide = null, date = n
       plan: workoutPlan(PRESET_WORKOUTS[0]),
       kicker: `${when} · after lifting`,
       title: ['Post-lift', 'flush.'],
-      meta: '35 min · Z1–Z2 · light gears',
+      meta: '30 min · Z1–Z2 · light gears',
       dek: 'Heavy legs from lifting? Tonight’s an easy one.',
     };
   }
@@ -131,7 +131,7 @@ export function workPosition(workout, index) {
 }
 
 // Summary headline: route + context, never an exclamation mark.
-export function rideHeadline({ plan, route, minutes, summited, laps, zoneShare, rampFtp, liftedBefore, workoutDone }) {
+export function rideHeadline({ plan, route, minutes, summited, laps, zoneShare, rampFtp, liftedBefore, workoutDone, distanceM = 0, units = 'imperial' }) {
   const after = liftedBefore ? 'after leg day.' : null;
   if (plan?.kind === 'ramp' && rampFtp) return ['New FTP:', `${rampFtp} W.`];
   if (plan?.kind === 'autopilot') {
@@ -143,9 +143,14 @@ export function rideHeadline({ plan, route, minutes, summited, laps, zoneShare, 
   if (route) {
     const hairpins = (route.turns || []).filter((t) => t.kind === 'hairpin').length;
     if (summited && hairpins >= 6) return [`${cap(numberWords(hairpins))} hairpins,`, after ?? 'and the top.'];
-    if (summited) return [`${route.name},`, after ?? 'to the top.'];
-    if (laps >= 2) return [`${cap(numberWords(laps))} laps of ${route.name},`, after ?? 'nice and steady.'];
-    return [`${route.name},`, after ?? `${numberWords(minutes)} minutes.`];
+    if (summited) return [`${route.name.replace(/\s*\(.*\)$/, '')},`, after ?? 'to the top.'];
+    const name = route.name.replace(/\s*\(.*\)$/, '');
+    if (laps >= 2) return [`${cap(numberWords(laps))} laps of ${name},`, after ?? 'nice and steady.'];
+    const dist = Math.floor(distanceM / (units === 'metric' ? 1000 : 1609.344));
+    const unit = units === 'metric' ? 'kilometre' : 'mile';
+    if (!route.loop && dist >= 1) return [`${name},`, after ?? `${numberWords(dist)} ${unit}${dist > 1 ? 's' : ''} up.`];
+    if (dist >= 1) return [`${name},`, after ?? `${numberWords(dist)} easy ${unit}${dist > 1 ? 's' : ''}.`];
+    return [`${name},`, after ?? 'a first taste.'];
   }
   return [`${cap(numberWords(minutes))} minutes`, after ?? 'on the trainer.'];
 }
