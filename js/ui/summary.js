@@ -4,7 +4,9 @@
 import { html } from './h.js';
 import { useStore } from '../app/store.js';
 import { Icon } from './icons.js';
-import { MiniChart, Scene } from './charts.js';
+import { MiniChart, Scene, Sparkline } from './charts.js';
+import { windowLabel, POWER_WINDOWS } from '../core/bests.js';
+import { decouplingVerdict } from '../core/aerobic.js';
 import { clock, POWER_ZONES, HR_ZONES, U } from './format.js';
 import { zone2 } from '../app/prefs.js';
 import { activityUrl } from '../services/strava.js';
@@ -39,6 +41,58 @@ function StravaRow({ c, s, up }) {
   }
   if (up.status === 'idle') return html`<div class="strava"><span class="disc off"></span><div><b>Not uploaded</b><span>Auto-upload is off</span></div><button class="btn pri" onClick=${() => c.upload()}>Upload</button></div>`;
   return html`<div class="strava"><span class="disc off"></span><div><b>Strava isn’t connected</b><span>Connect it once and rides go up by themselves</span></div><button class="btn sec" onClick=${() => c.openSheet({ type: 'settings', focus: 'strava' })}>Connect</button></div>`;
+}
+
+// Racing your best: the attempt(s) on this ride.
+function Attempts({ r }) {
+  const list = r.attempts || [];
+  if (!list.length) return null;
+  const top = list.find((a) => a.isBest) ?? list.reduce((a, b) => (b.timeS < a.timeS ? b : a));
+  const name = (r.routeName || 'this road').replace(/\s*\(.*\)$/, '');
+  let body;
+  if (top.isBest && top.prevTimeS != null) body = `${clock(top.prevTimeS - top.timeS)} faster than your old best of ${clock(top.prevTimeS)}.`;
+  else if (top.isBest) body = 'Your first time here — next time, its ghost rides with you.';
+  else body = `${clock(top.timeS - top.prevTimeS)} off your best of ${clock(top.prevTimeS)}.`;
+  return html`<div class="note-card racecard">
+    <b>${top.isBest && top.prevTimeS != null ? 'New best' : 'Your time'} · ${name} · ${clock(top.timeS)}</b>
+    ${body}${list.length > 1 ? ` ${list.length} times up today.` : ''}
+  </div>`;
+}
+
+// Zone 2 check: how much heart rate drifted against power, and the trend.
+function AerobicCard({ r }) {
+  const a = r.aerobic;
+  if (!a) return null;
+  const trend = r.efTrend || [];
+  const first = trend.length > 1 ? trend[0] : null;
+  const change = first ? Math.round(((a.ef - first.ef) / first.ef) * 100) : null;
+  return html`<div class="note-card aerocard">
+    <b>Zone 2 check · drift ${a.decoupling.toFixed(1)} % · ${decouplingVerdict(a.decoupling)}</b>
+    <div class="aerorow">
+      <div>
+        ${a.decoupling < 5 ? 'Heart rate held steady against your watts — the aerobic base held up.' : 'Heart rate crept up against your watts in the second half. Easier, longer Zone 2 rides fix this.'}
+        ${' '}Efficiency ${a.ef.toFixed(2)} W per beat${first ? (Math.abs(change) < 1 ? `, the same as on ${new Date(first.at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : `, ${change > 0 ? 'up' : 'down'} ${Math.abs(change)} % since ${new Date(first.at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`) : ''}.
+      </div>
+      ${trend.length > 1 && html`<span class="aerospark"><${Sparkline} values=${trend.map((t) => t.ef)} w=${80} h=${28} stroke="var(--pz2)" /></span>`}
+    </div>
+  </div>`;
+}
+
+// Best power over the classic durations, this ride and all time.
+function PowerBests({ r }) {
+  const curve = r.powerCurve || {};
+  const wins = POWER_WINDOWS.filter((w) => curve[w] != null);
+  if (!wins.length) return null;
+  return html`<div class="k zonek">Best power</div>
+    <div class="sgrid4 pbests">${wins.map((w) => {
+      const best = r.powerBests?.[w]?.watts;
+      const isNew = r.powerImproved?.includes(w);
+      return html`<div>
+        <div class="k">${windowLabel(w)}${isNew ? html` <span class="pb">best</span>` : ''}</div>
+        <div class="num">${curve[w]}<span class="u">W</span></div>
+        <div class="pball">${best && best !== curve[w] ? `best ${best}` : isNew ? 'all-time' : ''}</div>
+      </div>`;
+    })}</div>`;
 }
 
 function ZoneStrip({ counts, zones }) {
@@ -83,6 +137,9 @@ export function Summary({ c }) {
           <div><div class="k">Avg HR</div><div class="num">${sum.avgHeartRate ?? '--'}<span class="u">bpm</span></div></div>
           <div><div class="k">TSS</div><div class="num">${sum.tss}</div></div>
         </div>
+        <${Attempts} r=${r} />
+        ${r.goal && html`<div class="note-card goalcard"><b>Climb goal · ${U.elevation(r.goal.goalM, units).value} ${U.elevation(r.goal.goalM, units).unit}</b>${r.goal.reached ? 'Done.' : `${U.elevation(r.goal.goalM - r.climbedM, units).value} ${U.elevation(1, units).unit} short this time.`}</div>`}
+        <${AerobicCard} r=${r} />
         ${r.rampFtp &&
         html`<div class="note-card ftpcard"><b>New FTP estimate · ${r.rampFtp} W</b>75 % of your best minute on the ramp. ${r.rampFtp !== prefs.ftp ? html`<div class="btnrow"><button class="btn pri small" onClick=${() => c.useRampFtp(r.rampFtp)}>Use ${r.rampFtp} W</button><span></span></div>` : 'It’s already your FTP.'}</div>`}
         <div class="charts">
@@ -91,6 +148,7 @@ export function Summary({ c }) {
           ${hasHr &&
           html`<div class="c"><div><div class="k">Heart</div><b>${sum.avgHeartRate} bpm</b></div><${MiniChart} values=${samples.map((x) => x.heartRate)} stroke="#e8735f" fill="rgba(232,115,95,.10)" band=${{ ...z, color: 'var(--pz2)' }} min=${Math.min(z.min - 25, ...samples.map((x) => x.heartRate || 999))} /></div>`}
         </div>
+        <${PowerBests} r=${r} />
         <div class="k zonek">Time in power zones · mostly Z${topZone + 1} ${POWER_ZONES[topZone].name} (${Math.round((r.powerZones[topZone] / pzTotal) * 100)} %)</div>
         <${ZoneStrip} counts=${r.powerZones} zones=${POWER_ZONES} />
         ${hasHr &&

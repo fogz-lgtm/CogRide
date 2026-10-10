@@ -18,7 +18,10 @@ import { ZwiftClick } from '../devices/zwiftClick.js';
 import { HeartRateMonitor } from '../devices/heartRate.js';
 import { bluetoothAvailable } from '../devices/bleDevice.js';
 import { Shifter } from '../core/shifter.js';
-import { ratioFor } from '../core/gearing.js';
+import { ratioFor, setGearTable } from '../core/gearing.js';
+import { AttemptTracker, powerCurve, mergePowerBests } from '../core/bests.js';
+import { aerobicCheck, powerVariability } from '../core/aerobic.js';
+import { weekSummary, readiness, weekStart } from '../core/load.js';
 import { loadCatalog, loadRoute } from '../core/routeLibrary.js';
 import { routeFromGpx, routeFromPoints, hashString } from '../core/route.js';
 import { autopilotDefaults } from '../core/autopilot.js';
@@ -83,7 +86,10 @@ export class Controller extends EventTarget {
       runs: null,
       runsState: 'idle',
       customWorkouts: history.loadCustomWorkouts(),
-      recent: { liftedRecently: false, liftAt: null },
+      recent: { liftedRecently: false, liftAt: null, bigRun: null, hardRide: false, lightWeek: false },
+      week: null,
+      segments: null,
+      segmentsState: 'idle',
       lastRide: history.loadHistory()[0] ?? null,
       checkpoint: null,
       plan: null,
@@ -96,6 +102,8 @@ export class Controller extends EventTarget {
     });
     this.live = new Store({ snap: null });
 
+    setGearTable(prefs.gearTable);
+    this.difficultyOverride = null;
     this.engine = new RideEngine({ settings: engineSettings(prefs) });
     this.hub = new TrainerHub();
     this.hrHub = new EventTarget();
@@ -138,6 +146,7 @@ export class Controller extends EventTarget {
     loadCatalog()
       .then((catalog) => this.set({ catalog }))
       .catch((err) => this.toast({ title: 'Routes didn’t load', body: err.message }));
+    this.set({ week: this.weekWithLocal(null) });
     const cp = history.loadCheckpoint();
     if (cp) this.set({ checkpoint: { meta: cp.meta, savedAt: cp.savedAt, minutes: Math.round(cp.samples.length / 60) } });
 
@@ -195,16 +204,28 @@ export class Controller extends EventTarget {
     }
   }
 
-  // Did he lift in the last few hours? (Shapes tonight's pick and the summary headline.)
+  // The last week or so from Strava — runs, rides, lifting — shapes
+  // tonight's pick, the climbing tally and the summary headline.
   async checkRecent() {
     try {
-      const list = await strava.fetchRecentActivities({ afterS: Date.now() / 1000 - 12 * 3600 });
-      const lift = list.filter(strava.isStrength).sort((a, b) => b.start - a.start)[0];
-      const liftEnd = lift ? lift.start + lift.elapsedS * 1000 : null;
-      this.set({ recent: { liftedRecently: !!lift && Date.now() - liftEnd < 8 * 3600 * 1000, liftAt: liftEnd } });
+      const afterMs = Math.min(weekStart(), Date.now() - 10 * 86400000);
+      const list = await strava.fetchRecentActivities({ afterS: afterMs / 1000, perPage: 100 });
+      this.activities = list;
+      const r = readiness(list, { lastRide: this.state.lastRide });
+      this.set({ recent: r, week: this.weekWithLocal(weekSummary(list)) });
     } catch {
-      // not important
+      // offline: keep what we have
     }
+  }
+
+  // Rides saved here but not (yet) on Strava still count toward the week.
+  weekWithLocal(week) {
+    const since = weekStart();
+    const local = history.loadHistory().filter((e) => e.at >= since && (!week || !e.stravaId));
+    const base = week ?? { since, runDistanceM: 0, runElevM: 0, rideS: 0, rideElevM: 0, elevM: 0, lifts: 0, count: 0, localOnly: true };
+    const rideS = local.reduce((s, e) => s + (e.minutes || 0) * 60, 0);
+    const climb = local.reduce((s, e) => s + (e.climbedM || 0), 0);
+    return { ...base, rideS: base.rideS + rideS, rideElevM: base.rideElevM + climb, elevM: base.elevM + climb };
   }
 
   // ---------------------------------------------------------------- prefs
@@ -213,8 +234,20 @@ export class Controller extends EventTarget {
     const prefs = { ...this.state.prefs, ...patch };
     savePrefs(prefs);
     this.set({ prefs });
-    this.engine.updateSettings(engineSettings(prefs));
+    this.engine.updateSettings(this.engineSettingsNow());
+    if ('gearTable' in patch) {
+      setGearTable(prefs.gearTable);
+      this.engine.control(0);
+      this.live.set({ snap: this.engine.snapshot() });
+    }
+    if ('weeklyGoalM' in patch && !this.state.week) this.set({ week: this.weekWithLocal(null) });
     this.applySound();
+  }
+
+  // Preferences as the engine needs them, with this road's own trainer difficulty.
+  engineSettingsNow() {
+    const s = engineSettings(this.state.prefs);
+    return this.difficultyOverride != null ? { ...s, difficulty: this.difficultyOverride } : s;
   }
 
   applySound() {
@@ -500,7 +533,9 @@ export class Controller extends EventTarget {
     this.salvageCheckpoint();
     const prefs = this.state.prefs;
     const e = this.engine;
-    e.updateSettings(engineSettings(prefs));
+    const roadKey = plan.routeId ?? plan.route?.id ?? (plan.kind === 'route' ? plan.id : null);
+    this.difficultyOverride = roadKey ? prefs.routeDifficulty?.[roadKey] ?? null : null;
+    e.updateSettings(this.engineSettingsNow());
     e.setAutopilot(null);
     e.setWorkout(null);
     e.setRoute(null);
@@ -519,6 +554,10 @@ export class Controller extends EventTarget {
     this.planDoneSaid = false;
     this.startAcc = 0;
     this.drift = { out: 0, lastBell: -Infinity };
+    this.attempt = null;
+    this.attemptLog = [];
+    this.goalDone = false;
+    this.awayAt = null;
     if (this.trainer instanceof SimulatedTrainer) this.trainer.setEffort(Math.round(prefs.ftp * 0.72));
     this.set({ screen: 'ride', plan, route: null, routeError: null, rideState: 'ready', tv: false, sheet: null, result: null, toast: null });
     this.loadPlanRoute(plan);
@@ -534,6 +573,13 @@ export class Controller extends EventTarget {
       }
       if (this.state.plan !== plan) return;
       this.engine.setRoute(route);
+      // Race your best over this road (one attempt per climb or per lap).
+      this.attempt = new AttemptTracker(route, history.loadBest(route.id));
+      // A road's own difficulty may only be known now (runs, segments, GPX).
+      if (this.difficultyOverride == null && prefs.routeDifficulty?.[route.id] != null) {
+        this.difficultyOverride = prefs.routeDifficulty[route.id];
+        this.engine.updateSettings(this.engineSettingsNow());
+      }
       this.set({ route });
     } catch (err) {
       this.set({ routeError: err.message });
@@ -571,6 +617,9 @@ export class Controller extends EventTarget {
     e.setAutopilot(null);
     e.setRoute(null);
     e.reset();
+    this.attempt = null;
+    this.difficultyOverride = null;
+    e.updateSettings(this.engineSettingsNow());
   }
 
   // Leave a ride that never started.
@@ -617,15 +666,18 @@ export class Controller extends EventTarget {
       rampFtp: plan?.kind === 'ramp' ? this.rampFtp ?? ftpFromRamp(ride.samples.map((s) => s.power ?? 0)) : null,
       liftedBefore,
       workoutDone,
+      attempts: this.attemptLog,
+      goal: plan?.goalM ? { goalM: plan.goalM, reached: ride.climbedM >= plan.goalM } : null,
     });
     this.keepForStrava(result);
+    if (this.state.week) this.set({ week: this.weekWithLocal(this.activities ? weekSummary(this.activities) : null) });
     history.clearCheckpoint();
     this.set({ screen: 'summary', result, rideState: 'done', tv: false, sheet: null, checkpoint: null, lastRide: result.entry, toast: null });
     this.applySound();
     if (result.upload.status === 'busy') this.upload();
   }
 
-  buildResult({ samples, startedAt, plan, route, prefs, photo, climbedM, movingTimeS, summited, laps, rampFtp, liftedBefore, workoutDone }) {
+  buildResult({ samples, startedAt, plan, route, prefs, photo, climbedM, movingTimeS, summited, laps, rampFtp, liftedBefore, workoutDone, attempts = [], goal = null }) {
     const summary = summarize(samples, prefs.ftp);
     const minutes = Math.round(movingTimeS / 60);
     const z = zone2(prefs);
@@ -639,7 +691,24 @@ export class Controller extends EventTarget {
     }
     const hrZones = [0, 0, 0, 0, 0];
     for (const s of hrs) hrZones[hrZoneIndex(s.heartRate, prefs.hrZones) ?? 0]++;
-    const headline = rideHeadline({ plan, route, minutes, summited, laps, zoneShare, rampFtp, liftedBefore, workoutDone, distanceM: summary.distanceM, units: prefs.units });
+    const newBest = attempts.find((a) => a.isBest && a.prevTimeS != null) ?? null;
+    const headline = rideHeadline({ plan, route, minutes, summited, laps, zoneShare, rampFtp, liftedBefore, workoutDone, distanceM: summary.distanceM, units: prefs.units, newBest: !!newBest, goal });
+    // Zone 2 fitness check: on autopilot rides and other steady, mostly-Z2 rides.
+    const steady = plan?.kind === 'autopilot' || (!plan?.workout && zoneShare >= 0.6 && (powerVariability(samples) ?? 1) < 0.2);
+    const aerobic = steady ? aerobicCheck(samples) : null;
+    const efTrend = aerobic
+      ? history
+          .loadHistory()
+          .filter((e) => e.ef && e.at > startedAt - 90 * 86400000 && e.at < startedAt)
+          .slice(0, 9)
+          .reverse()
+          .map((e) => ({ at: e.at, ef: e.ef }))
+          .concat([{ at: startedAt, ef: aerobic.ef }])
+      : null;
+    // Best power over 5 s, 1, 5 and 20 min — this ride and all time.
+    const curve = powerCurve(samples.map((s) => s.power ?? 0));
+    const merged = mergePowerBests(history.loadPowerBests(), curve, startedAt);
+    history.savePowerBests(merged.next);
     const fit = encodeActivity(samples, { summary, ftp: prefs.ftp });
     const id = `cogride-${startedAt}`;
     const name = activityName(plan, route, minutes);
@@ -655,6 +724,8 @@ export class Controller extends EventTarget {
       tss: summary.tss,
       avgPower: summary.avgPower,
       avgHr: summary.avgHeartRate,
+      ef: aerobic?.ef ?? null,
+      decoupling: aerobic?.decoupling ?? null,
     };
     history.addHistory(entry);
     const canUpload = strava.canUpload();
@@ -675,6 +746,13 @@ export class Controller extends EventTarget {
       hrZones,
       rampFtp,
       plan,
+      aerobic,
+      efTrend,
+      powerCurve: curve,
+      powerBests: merged.next,
+      powerImproved: merged.improved,
+      attempts,
+      goal,
       routeName: route?.name ?? null,
       routeKind: route?.kind ?? null,
       upload: { status: canUpload && prefs.autoUpload ? 'busy' : canUpload ? 'idle' : 'off', attempt: 0 },
@@ -831,7 +909,36 @@ export class Controller extends EventTarget {
         }
       }
     }
-    this.live.set({ snap });
+    this.live.set({ snap, race: this.race(snap) });
+  }
+
+  // Racing your best over this road: attempts, ahead/behind, the ghost.
+  race(snap) {
+    const a = this.attempt;
+    const s = this.state;
+    if (!a || !snap.route || s.screen !== 'ride') return null;
+    if (s.rideState === 'riding') {
+      const ev = a.update(snap.route, snap.movingTime);
+      if (ev?.kind === 'finish') this.attemptFinished(ev);
+    }
+    const delta = a.delta(snap.route, snap.movingTime);
+    const ghost = s.prefs.ghost !== false ? a.ghostTotal(snap.movingTime) : null;
+    return { delta, ghost, bestS: a.best?.timeS ?? null, active: !!a.current };
+  }
+
+  attemptFinished(ev) {
+    const route = this.state.route;
+    const name = route?.name?.replace(/\s*\(.*\)$/, '') ?? 'this road';
+    const prevTimeS = ev.best?.timeS ?? null;
+    this.attemptLog.push({ timeS: ev.timeS, isBest: ev.isBest, prevTimeS });
+    if (ev.isBest) {
+      history.saveBest(route.id, { timeS: ev.timeS, splits: ev.splits, at: Date.now() });
+      sound.playChime();
+      if (prevTimeS != null) this.toast({ title: `New best: ${mmss(ev.timeS)}`, body: `${name}, ${mmss(prevTimeS - ev.timeS)} faster than before.`, ms: 9000 });
+      else this.toast({ title: `${name}: ${mmss(ev.timeS)}`, body: 'Your first time here. Next time you’ll race this ride.', ms: 9000 });
+    } else {
+      this.toast({ title: `${name}: ${mmss(ev.timeS)}`, body: `${mmss(ev.timeS - prevTimeS)} off your best of ${mmss(prevTimeS)}.`, ms: 9000 });
+    }
   }
 
   everySecond(snap) {
@@ -856,6 +963,13 @@ export class Controller extends EventTarget {
         this.drift.lastBell = snap.movingTime;
         sound.playBell();
       }
+    }
+    // Climb goal reached.
+    if (plan?.goalM && !this.goalDone && snap.climbed >= plan.goalM) {
+      this.goalDone = true;
+      sound.playChime();
+      const ft = this.state.prefs.units === 'metric' ? `${Math.round(plan.goalM)} m` : `${Math.round(plan.goalM / 0.3048).toLocaleString('en-US')} ft`;
+      this.toast({ title: `${ft} climbed.`, body: 'Goal done. Ride on, or pause to end.', ms: 10000 });
     }
     // Autopilot plan length reached: say so once, keep riding.
     if (plan?.minutes && plan.kind === 'autopilot' && !this.planDoneSaid && snap.movingTime >= plan.minutes * 60) {
@@ -903,6 +1017,39 @@ export class Controller extends EventTarget {
       this.set({ runs, runsState: 'idle' });
     } catch (err) {
       this.set({ runsState: 'error', runsError: err.message });
+    }
+  }
+
+  async loadSegments() {
+    if (!strava.isConnected()) return;
+    this.set({ segmentsState: 'loading' });
+    try {
+      const segments = await strava.fetchStarredSegments();
+      this.set({ segments, segmentsState: 'idle' });
+    } catch (err) {
+      this.set({ segmentsState: 'error', segmentsError: err.message });
+    }
+  }
+
+  // Any Strava segment — starred, or a pasted link — as a road to ride.
+  async rideSegment(idOrLink, name = '') {
+    const id = strava.parseSegmentId(idOrLink);
+    if (!id) {
+      this.toast({ title: 'That’s not a segment link', body: 'Paste a link like strava.com/segments/229781.' });
+      return;
+    }
+    if (!strava.isConnected()) {
+      this.openSheet({ type: 'settings', focus: 'strava' });
+      return;
+    }
+    this.set({ sheet: { type: 'plan', loading: true, title: name || 'Strava segment' } });
+    try {
+      const track = await strava.fetchSegmentTrack(id);
+      const route = routeFromPoints({ name: track.name, points: track.points, id: `seg-${id}`, kind: 'segment', source: 'strava' });
+      this.set({ sheet: { type: 'plan', plan: { kind: 'segment', id: route.id, title: route.name, route } } });
+    } catch (err) {
+      this.set({ sheet: null });
+      this.toast({ title: 'Couldn’t load that segment', body: err.message });
     }
   }
 
@@ -1001,14 +1148,43 @@ export class Controller extends EventTarget {
   }
 
   onVisibility() {
+    const riding = this.state.rideState === 'riding' || this.state.rideState === 'paused';
     if (document.visibilityState === 'hidden') {
-      if (this.state.rideState === 'riding' || this.state.rideState === 'paused') this.saveCheckpoint();
+      if (riding) {
+        this.saveCheckpoint();
+        this.awayAt = Date.now();
+      }
       return;
     }
     sound.resumeAudio();
     if (this.state.screen === 'ride') this.requestWakeLock();
     this.lastTick = performance.now();
+    const away = this.awayAt ? (Date.now() - this.awayAt) / 1000 : 0;
+    this.awayAt = null;
+    // Say what happened while he was in another app (after reconnects settle).
+    if (riding && away >= 5) setTimeout(() => this.welcomeBack(away), 2500);
   }
+
+  welcomeBack(away) {
+    if (this.state.screen !== 'ride') return;
+    const t = this.state.devices.trainer.state;
+    const devices =
+      t === 'ready'
+        ? 'Trainer’s connected.'
+        : t === 'connecting'
+          ? 'Reconnecting the trainer…'
+          : 'The trainer dropped — pause, then tap Connect trainer.';
+    const counted = this.state.rideState === 'paused' ? '' : ' That time wasn’t recorded.';
+    this.toast({ title: `Welcome back — away ${mmss(away)}`, body: `${devices}${counted}`, ms: 7000 });
+  }
+}
+
+function mmss(seconds) {
+  const s = Math.max(0, Math.round(seconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const ss = String(s % 60).padStart(2, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
 }
 
 export function activityName(plan, route, minutes) {
@@ -1017,6 +1193,8 @@ export function activityName(plan, route, minutes) {
   if (plan.kind === 'ramp') return 'FTP ramp test';
   if (plan.kind === 'workout') return `${plan.title}${route ? ` · ${route.name}` : ''}`;
   if (plan.kind === 'run') return `${route?.name ?? plan.title} (ridden)`;
+  if (plan.kind === 'segment') return `${route?.name ?? plan.title} (segment, ridden)`;
+  if (plan.kind === 'vert') return `Climb goal · ${route?.name ?? ''}`.trim();
   return route?.name ?? plan.title ?? 'CogRide ride';
 }
 
@@ -1028,7 +1206,7 @@ export function activityDescription({ plan, route, climbedM, zoneShare, rampFtp,
     const ft = Math.round(climbedM / 0.3048).toLocaleString('en-US');
     parts.push(prefs.units === 'metric' ? `${Math.round(climbedM)} m climbed.` : `${ft} ft climbed.`);
   }
-  if (route && plan?.kind !== 'route' && plan?.kind !== 'run' && plan?.kind !== 'gpx') parts.push(`Virtual road: ${route.name}.`);
+  if (route && !['route', 'run', 'gpx', 'segment', 'vert'].includes(plan?.kind)) parts.push(`Virtual road: ${route.name}.`);
   parts.push('Ridden indoors with CogRide (virtual shifting, Zwift Cog + Click).');
   return parts.join(' ');
 }

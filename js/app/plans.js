@@ -27,6 +27,11 @@ export function autopilotPlan(minutes = 60) {
   return { kind: 'autopilot', id: `z2-${minutes}`, title: 'Zone 2 autopilot', minutes };
 }
 
+// Ride until you've climbed `goalM` (repeating the climb as needed).
+export function vertPlan(goalM, routeId) {
+  return { kind: 'vert', id: `vert-${Math.round(goalM)}`, title: 'Climb goal', goalM, routeId };
+}
+
 export function workoutPlan(workout) {
   return { kind: 'workout', id: workout.id, title: workout.name, workout, minutes: Math.round(totalDuration(workout) / 60) };
 }
@@ -63,8 +68,10 @@ export function dateline(date = new Date()) {
   return `${day} · ${md} · ${time}`;
 }
 
-// Tonight's pick: an easy flush after lifting, otherwise an hour of Zone 2.
-export function tonightsPick({ liftedRecently = false, lastRide = null, date = new Date() } = {}) {
+// Tonight's pick, from what the last few days look like on Strava: an easy
+// flush after lifting, gentle after a long run or a hard ride, something
+// with bite after a quiet few days, otherwise an hour of Zone 2.
+export function tonightsPick({ recent = {}, liftedRecently = recent.liftedRecently, lastRide = null, date = new Date(), units = 'imperial' } = {}) {
   const when = date.getHours() >= 16 || date.getHours() < 4 ? "Tonight's pick" : "Today's pick";
   if (liftedRecently) {
     return {
@@ -75,15 +82,40 @@ export function tonightsPick({ liftedRecently = false, lastRide = null, date = n
       dek: 'Heavy legs from lifting? Tonight’s an easy one.',
     };
   }
-  const hardYesterday = lastRide && Date.now() - lastRide.at < 36 * 3600 * 1000 && (lastRide.tss ?? 0) >= 80;
+  const recovery = BUILT_IN_WORKOUTS.find((w) => w.id === 'recovery-30') ?? PRESET_WORKOUTS[0];
+  if (recent.bigRun) {
+    const r = recent.bigRun;
+    const dist = units === 'metric' ? `${(r.distanceM / 1000).toFixed(1)} km` : `${(r.distanceM / 1609.344).toFixed(1)} mi`;
+    const gain = units === 'metric' ? `${Math.round(r.elevM)} m` : `${Math.round(r.elevM / 0.3048).toLocaleString('en-US')} ft`;
+    return {
+      plan: workoutPlan(recovery),
+      kicker: `${when} · after your long run`,
+      title: ['Thirty easy', 'minutes.'],
+      meta: '30 min · Z1 · spin the legs out',
+      dek: `${dist} and +${gain} in your legs. Keep tonight gentle.`,
+    };
+  }
+  const hardYesterday = recent.hardRide || (lastRide && Date.now() - lastRide.at < 36 * 3600 * 1000 && (lastRide.tss ?? 0) >= 80);
   if (hardYesterday) {
     return {
-      plan: workoutPlan(BUILT_IN_WORKOUTS.find((w) => w.id === 'recovery-30') ?? PRESET_WORKOUTS[0]),
+      plan: workoutPlan(recovery),
       kicker: `${when} · recovery`,
       title: ['Thirty easy', 'minutes.'],
       meta: '30 min · Z1 · spin it out',
       dek: 'Yesterday was a big one. Keep tonight gentle.',
     };
+  }
+  if (recent.lightWeek) {
+    const hill = BUILT_IN_WORKOUTS.find((w) => w.id === 'hill-strength-6x4');
+    if (hill) {
+      return {
+        plan: workoutPlan(hill),
+        kicker: `${when} · fresh legs`,
+        title: ['Fresh legs.', 'Make it count.'],
+        meta: '58 min · 6 × 4 min low-cadence climbing',
+        dek: 'A quiet few days. Tonight’s a good night for climbing strength — it carries straight over to steep trails.',
+      };
+    }
   }
   return {
     plan: autopilotPlan(60),
@@ -131,9 +163,15 @@ export function workPosition(workout, index) {
 }
 
 // Summary headline: route + context, never an exclamation mark.
-export function rideHeadline({ plan, route, minutes, summited, laps, zoneShare, rampFtp, liftedBefore, workoutDone, distanceM = 0, units = 'imperial' }) {
+export function rideHeadline({ plan, route, minutes, summited, laps, zoneShare, rampFtp, liftedBefore, workoutDone, distanceM = 0, units = 'imperial', newBest = false, goal = null }) {
   const after = liftedBefore ? 'after leg day.' : null;
   if (plan?.kind === 'ramp' && rampFtp) return ['New FTP:', `${rampFtp} W.`];
+  if (goal?.reached) {
+    const ft = Math.round(goal.goalM / 0.3048);
+    const lead = units === 'metric' ? `${Math.round(goal.goalM).toLocaleString('en-US')} metres up,` : ft % 1000 === 0 ? `${cap(numberWords(ft / 1000))} thousand feet,` : `${ft.toLocaleString('en-US')} feet,`;
+    return [lead, after ?? 'goal done.'];
+  }
+  if (newBest && route) return [`${route.name.replace(/\s*\(.*\)$/, '')},`, after ? 'a new best, after leg day.' : 'a new best.'];
   if (plan?.kind === 'autopilot') {
     const lead = `${cap(numberWords(minutes))} minutes`;
     if (zoneShare >= 0.8) return [lead, after ? 'in the pocket, after leg day.' : 'in the pocket.'];

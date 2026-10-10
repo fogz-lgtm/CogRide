@@ -261,6 +261,14 @@ function near(m, units) {
   return `${q.value} ${q.unit}`;
 }
 
+// "0:42 ahead" / "0:12 behind" your best, or null.
+export function raceText(race) {
+  if (race?.delta == null) return null;
+  const s = Math.round(Math.abs(race.delta));
+  if (s < 1) return 'level with your best';
+  return `${clock(s)} ${race.delta > 0 ? 'ahead' : 'behind'}`;
+}
+
 function caption(route, snap, facts, units) {
   if (!route || !snap.route) return { kicker: shortName(route?.name ?? ''), title: null };
   const r = snap.route;
@@ -275,7 +283,7 @@ function caption(route, snap, facts, units) {
   return { kicker, title: route.kind === 'run' ? html`Your run, <em>as a ride</em>` : html`Summit <em>in ${near(route.length - r.d, units)}</em>` };
 }
 
-function ProfileRow({ route, snap, facts, units }) {
+function ProfileRow({ route, snap, facts, units, goalM = null }) {
   if (!route || !snap.route) return html`<div class="profile"><div class="row"><span class="k">&nbsp;</span></div><svg></svg></div>`;
   const r = snap.route;
   const ridden = U.distance(snap.distance, units);
@@ -290,9 +298,15 @@ function ProfileRow({ route, snap, facts, units }) {
     const left = U.distance(r.d, units);
     right = `${left.value} ${left.unit} to the bottom`;
   }
+  if (goalM) {
+    const left = U.elevation(Math.max(0, goalM - snap.climbed), units);
+    const goal = U.elevation(goalM, units);
+    right = snap.climbed >= goalM ? `Goal ${goal.value} ${goal.unit} · done` : `Goal ${goal.value} ${goal.unit} · ${left.value} to go`;
+  }
   return html`<div class="profile">
     <div class="row"><span class="k">${ridden.value} ${ridden.unit} ridden</span><span class="k">${right}</span></div>
     <${ElevationStrip} route=${route} distance=${snap.distance} units=${units} />
+    ${goalM && html`<div class="ivbar goalbar"><i style=${{ width: `${Math.min(100, (snap.climbed / goalM) * 100)}%`, background: snap.climbed >= goalM ? 'var(--pz3)' : 'var(--paper-2)' }}></i></div>`}
   </div>`;
 }
 
@@ -316,11 +330,11 @@ const hrItem = (snap) => ({ k: 'Heart', v: snap.heartRate ?? '--', u: 'bpm' });
 
 // ---------------------------------------------------------------- panels per mode
 
-function RoutePanel({ c, snap, route, prefs, facts, rail }) {
+function RoutePanel({ c, snap, route, prefs, facts, rail, goalM }) {
   const units = prefs.units;
   const sp = U.speed(snap.speed, units);
   return html`<div class="panel">
-    <${ProfileRow} route=${route} snap=${snap} facts=${facts} units=${units} />
+    <${ProfileRow} route=${route} snap=${snap} facts=${facts} units=${units} goalM=${goalM} />
     <div class="duo">
       <${PowerHero} snap=${snap} ftp=${prefs.ftp} dimBar=${rail.show} />
       ${snap.mode === 'erg' ? html`<${ErgHelm} c=${c} snap=${snap} ftp=${prefs.ftp} />` : html`<${GearHelm} c=${c} snap=${snap} rail=${rail} />`}
@@ -499,6 +513,7 @@ function Photo({ c, route, active, prefs, snap, flash, children }) {
       last = now;
       const s = c.live.state.snap;
       if (s && world.current) {
+        world.current.setGhost?.(c.live.state.race?.ghost ?? null);
         world.current.update({ distance: s.distance, speed: s.state === 'riding' ? s.speed : 0, cadence: s.cadence, tucked: s.tucked, power: s.power, grade: s.grade, ftp: prefs.ftp }, dt);
         world.current.render();
       }
@@ -552,7 +567,7 @@ function useFlash(c) {
 
 export function RideScreen({ c }) {
   const s = useStore(c.store);
-  const { snap } = useStore(c.live);
+  const { snap, race } = useStore(c.live);
   const rail = useRail(c);
   const flash = useFlash(c);
   const facts = useClimbFacts(s.route);
@@ -562,6 +577,8 @@ export function RideScreen({ c }) {
   const letterbox = mode !== 'route';
   const photoActive = !s.tv && !s.sheet && s.screen === 'ride';
   const cap = caption(route, snap, facts, prefs.units);
+  const vs = raceText(race);
+  if (vs) cap.kicker = `${cap.kicker} · ${vs}`;
   const grade = route ? gradeAhead(route, snap.distance) : 0;
   const elev = U.elevation(snap.elevation, prefs.units);
   return html`<div class=${`screen ride ${letterbox ? 'letterbox' : ''} mode-${mode}`}>
@@ -575,11 +592,11 @@ export function RideScreen({ c }) {
       <div class="elev"><div class="k lt">Elevation</div><div class="num">${elev.value}<span class="u">${elev.unit}</span></div></div>
     <//>
     <div class="lprofile">${route && html`<${ElevationStrip} route=${route} distance=${snap.distance} units=${prefs.units} />`}</div>
-    ${mode === 'route' && html`<${RoutePanel} c=${c} snap=${snap} route=${route} prefs=${prefs} facts=${facts} rail=${rail} />`}
+    ${mode === 'route' && html`<${RoutePanel} c=${c} snap=${snap} route=${route} prefs=${prefs} facts=${facts} rail=${rail} goalM=${plan.goalM} />`}
     ${mode === 'erg' && html`<${ErgPanel} c=${c} snap=${snap} plan=${plan} prefs=${prefs} rail=${rail} />`}
     ${mode === 'z2' && html`<${Z2Panel} c=${c} snap=${snap} plan=${plan} prefs=${prefs} />`}
     ${s.rideState === 'ready' && !s.tv && html`<${StartBar} c=${c} s=${s} />`}
-    ${s.tv && html`<${TvMode} c=${c} s=${s} snap=${snap} mode=${mode} />`}
+    ${s.tv && html`<${TvMode} c=${c} s=${s} snap=${snap} mode=${mode} race=${race} />`}
   </div>`;
 }
 

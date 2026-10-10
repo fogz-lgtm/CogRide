@@ -8,7 +8,8 @@ import { Scene, WorkoutProfile } from './charts.js';
 import { clock, U } from './format.js';
 import { sparkline } from '../core/routeLibrary.js';
 import { regionFor, timeOfDayNow } from '../world/themes.js';
-import { AUTOPILOT_MINUTES, autopilotPlan } from '../app/plans.js';
+import { AUTOPILOT_MINUTES, autopilotPlan, vertPlan } from '../app/plans.js';
+import { loadBest } from '../app/history.js';
 import { totalDuration } from '../workouts.js';
 import { estimateTss } from './home.js';
 import { parseWeight } from '../core/units.js';
@@ -35,11 +36,11 @@ function CloseBar({ c, children, onClose }) {
 
 const firstSentences = (text, n = 2) => ((text || '').match(/[^.]+(\.|$)/g) || []).slice(0, n).join('').trim();
 
-function RouteChoice({ s, value, onChange }) {
-  const loops = s.catalog.filter((d) => d.loop);
+function RouteChoice({ s, value, onChange, climbsOnly = false }) {
+  const loops = climbsOnly ? [] : s.catalog.filter((d) => d.loop);
   const climbs = s.catalog.filter((d) => !d.loop);
   return html`<div class="routepick">${[...loops, ...climbs].map(
-    (d) => html`<button class=${`chip ${d.id === value ? 'on' : ''}`} onClick=${() => onChange(d.id)}>${d.name}</button>`,
+    (d) => html`<button class=${`chip ${d.id === value ? 'on' : ''}`} onClick=${() => onChange(d.id)}>${d.name.replace(/\s*\(.*\)$/, '')}</button>`,
   )}</div>`;
 }
 
@@ -47,7 +48,8 @@ export function PlanSheet({ c, s, sheet }) {
   const { prefs } = s;
   const plan = sheet.plan;
   const [minutes, setMinutes] = useState(plan?.minutes ?? 60);
-  const [routeId, setRouteId] = useState(plan?.kind === 'free' ? prefs.freeRouteId : prefs.workoutRouteId);
+  const [routeId, setRouteId] = useState(plan?.routeId ?? (plan?.kind === 'free' ? prefs.freeRouteId : plan?.kind === 'vert' ? prefs.vertRouteId || 'mount-diablo-south-gate' : prefs.workoutRouteId));
+  const [goalM, setGoalM] = useState(plan?.goalM ?? prefs.vertGoalM ?? 3000 * 0.3048);
   if (sheet.loading || !plan) {
     return html`<${Sheet} c=${c}><${CloseBar} c=${c}><h2>${sheet.title || 'Loading'} <em>…</em></h2><//><p class="sub">Fetching the track from Strava.</p><//>`;
   }
@@ -73,11 +75,16 @@ export function PlanSheet({ c, s, sheet }) {
       ['Climb', gain.value, gain.unit],
       d.loop ? ['Laps', '∞', ''] : ['Average', d.avgGradientPct, '%'],
     ];
-  } else if (plan.kind === 'run' || plan.kind === 'gpx') {
+  } else if (plan.kind === 'run' || plan.kind === 'gpx' || plan.kind === 'segment') {
     const r = plan.route;
     figure = html`<${Scene} region="bayarea" tod=${tod} seed=${r.id} w=${366} h=${150} profile=${Array.from({ length: 60 }, (_, i) => r.elevationAt((r.length * i) / 59))} />`;
-    title = [r.name, plan.kind === 'run' ? 'as a ride' : 'imported'];
-    sub = plan.kind === 'run' ? 'Your run’s real road and real climbing. You ride up it and back down again.' : 'Ridden up and back, on its real elevation.';
+    title = [r.name, plan.kind === 'run' ? 'as a ride' : plan.kind === 'segment' ? 'a Strava segment' : 'imported'];
+    sub =
+      plan.kind === 'run'
+        ? 'Your run’s real road and real climbing. You ride up it and back down again.'
+        : plan.kind === 'segment'
+          ? 'The segment’s real road and gradient, start to finish, then back down to go again.'
+          : 'Ridden up and back, on its real elevation.';
     const len = U.distance(r.length, units);
     const gain = U.elevation(r.ascent, units);
     stats = [
@@ -121,6 +128,16 @@ export function PlanSheet({ c, s, sheet }) {
       <div class="section"><div class="k">Ride it on</div><${RouteChoice} s=${s} value=${routeId} onChange=${setRouteId} /></div>
       ${s.devices.hr.state !== 'ready' && html`<p class="sub">Needs heart rate: connect your Pace 3 first.</p>`}`;
     go = { ...autopilotPlan(minutes), routeId };
+  } else if (plan.kind === 'vert') {
+    const climbDef = s.catalog.find((d) => d.id === routeId);
+    figure = html`<${Scene} region=${climbDef ? regionFor(climbDef) : 'alpine'} tod=${tod} seed=${`vert${routeId}`} w=${366} h=${150} profile=${climbDef ? sparkline(climbDef, 60) : null} />`;
+    title = ['Climb', 'goal'];
+    sub = 'Pick a number and a climb. Ride up, roll back down, go again — until you’ve climbed it. Descents are free.';
+    const goals = units === 'metric' ? [300, 600, 1000, 1500].map((m) => [m, `${m} m`]) : [1000, 2000, 3000, 5000].map((ft) => [ft * 0.3048, `${ft / 1000}k ft`]);
+    const reps = climbDef ? Math.ceil(goalM / climbDef.gainM) : null;
+    extra = html`<div class="section"><${Row} title="Goal" sub=${reps ? `About ${reps} time${reps > 1 ? 's' : ''} up ${climbDef.name.replace(/\s*\(.*\)$/, '')}` : ''}><${Seg} value=${goals.find(([v]) => Math.abs(v - goalM) < 1)?.[0] ?? goalM} options=${goals} onChange=${setGoalM} /><//></div>
+      <div class="section"><div class="k">On</div><${RouteChoice} s=${s} value=${routeId} onChange=${setRouteId} climbsOnly=${true} /></div>`;
+    go = vertPlan(goalM, routeId);
   } else if (plan.kind === 'free') {
     figure = html`<${Scene} region="coast" tod=${tod} seed="free" w=${366} h=${150} />`;
     title = ['Free', 'ride'];
@@ -131,14 +148,35 @@ export function PlanSheet({ c, s, sheet }) {
 
   const remember = () => {
     if (plan.kind === 'free') c.setPrefs({ freeRouteId: routeId });
-    else if (plan.kind !== 'route' && plan.kind !== 'run' && plan.kind !== 'gpx') c.setPrefs({ workoutRouteId: routeId });
+    else if (plan.kind === 'vert') c.setPrefs({ vertRouteId: routeId, vertGoalM: goalM });
+    else if (!['route', 'run', 'gpx', 'segment'].includes(plan.kind)) c.setPrefs({ workoutRouteId: routeId });
   };
+  // The road this ride is on: its own trainer difficulty and your best time there.
+  const roadKey = plan.kind === 'route' ? plan.def?.id ?? plan.id : plan.route?.id ?? (['vert', 'free'].includes(plan.kind) ? routeId : null);
+  const best = roadKey && ['route', 'run', 'gpx', 'segment', 'vert', 'free'].includes(plan.kind) ? loadBest(roadKey) : null;
+  const roadDiff = roadKey ? prefs.routeDifficulty?.[roadKey] ?? null : null;
+  const setRoadDiff = (v) => {
+    const next = { ...(prefs.routeDifficulty || {}) };
+    if (v == null) delete next[roadKey];
+    else next[roadKey] = v;
+    c.setPrefs({ routeDifficulty: next });
+  };
+  const roadRows =
+    roadKey && ['route', 'run', 'gpx', 'segment', 'vert', 'free'].includes(plan.kind)
+      ? html`<div class="section">
+          ${best && html`<${Row} title=${`Your best here: ${clock(best.timeS)}`} sub=${`${new Date(best.at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}${prefs.ghost !== false ? ' · its ghost rides with you' : ''}`}><span></span><//>`}
+          <${Row} title="Difficulty here" sub=${roadDiff == null ? `Default · ${Math.round(prefs.difficulty * 100)} %` : 'This road only'}>
+            <${Seg} value=${roadDiff} options=${[[null, 'Default'], [0.25, '25'], [0.5, '50'], [0.75, '75'], [1, '100']]} onChange=${setRoadDiff} />
+          <//>
+        </div>`
+      : null;
   return html`<${Sheet} c=${c} className="plansheet">
     <${CloseBar} c=${c}><h2>${title[0]} ${title[1] && html`<em>${title[1]}</em>`}</h2><//>
     ${figure && html`<div class="planfig">${figure}</div>`}
     ${sub && html`<p class="sub">${sub}</p>`}
     ${stats.length > 0 && html`<div class="statline">${stats.map(([k, v, u]) => html`<div><div class="k">${k}</div><div class="num">${v}${u && html`<span class="u">${u}</span>`}</div></div>`)}</div>`}
     ${extra}
+    ${roadRows}
     <button class="btn pri wide go" onClick=${() => (remember(), c.ride(go))}>Ride ${Icon.chevron()}</button>
   <//>`;
 }
@@ -279,6 +317,9 @@ export function SettingsSheet({ c, s }) {
       <${Row} title="Trainer difficulty" sub="How much of the road’s slope you feel. Zwift’s default is 50 %.">
         <${Seg} value=${p.difficulty} options=${[[0.25, '25'], [0.5, '50'], [0.75, '75'], [1, '100']]} onChange=${(v) => c.setPrefs({ difficulty: v })} />
       <//>
+      <${Row} title="Gears" sub=${p.gearTable === 'climbing' ? 'Every gear 20 % easier — for long, steep climbs' : 'Zwift’s 24 gears'}>
+        <${Seg} value=${p.gearTable || 'zwift'} options=${[['zwift', 'Zwift'], ['climbing', 'Climbing']]} onChange=${(v) => c.setPrefs({ gearTable: v })} />
+      <//>
       <${Row} title="ERG Click step" sub="Each Click nudges the target"><${Seg} value=${p.ergStepPct} options=${[[0.01, '1 %'], [0.02, '2 %']]} onChange=${(v) => c.setPrefs({ ergStepPct: v })} /><//>
       <${Row} title="Fuel reminders"><${Seg} value=${p.fuelEveryMin} options=${[[0, 'Off'], [30, '30'], [45, '45'], [60, '60']]} onChange=${(v) => c.setPrefs({ fuelEveryMin: v })} /><//>
       <${Row} title="Sounds"><${Seg} value=${p.sound} options=${[['normal', 'Normal'], ['quiet', 'Quiet'], ['off', 'Off']]} onChange=${(v) => c.setPrefs({ sound: v })} /><//>
@@ -286,6 +327,20 @@ export function SettingsSheet({ c, s }) {
       <${Row} title="Light" sub="Auto follows your clock"><${Seg} value=${p.timeOfDay} options=${[['auto', 'Auto'], ['day', 'Day'], ['golden', 'Gold'], ['dusk', 'Dusk'], ['night', 'Night']]} onChange=${(v) => c.setPrefs({ timeOfDay: v })} /><//>
       <${Row} title="Workouts ride on">
         <label class="field"><select class="wide" value=${p.workoutRouteId} onChange=${(e) => c.setPrefs({ workoutRouteId: e.target.value })}>${climbs.map((d) => html`<option value=${d.id}>${d.name}</option>`)}</select></label>
+      <//>
+    </div>
+
+    <div class="section" id="goals">
+      <div class="k">Goals</div>
+      <${Row} title="Weekly climbing" sub="Runs and rides together, from Strava">
+        <${Seg}
+          value=${p.weeklyGoalM || 0}
+          options=${units === 'metric' ? [[0, 'Off'], [1500, '1.5k'], [3000, '3k'], [4500, '4.5k']] : [[0, 'Off'], [5000 * 0.3048, '5k'], [10000 * 0.3048, '10k'], [15000 * 0.3048, '15k']]}
+          onChange=${(v) => c.setPrefs({ weeklyGoalM: v })}
+        />
+      <//>
+      <${Row} title="Race your best" sub="A ghost of your fastest ride on each road, beside you">
+        <${Toggle} label="Race your best" on=${p.ghost !== false} onChange=${(on) => c.setPrefs({ ghost: on })} />
       <//>
     </div>
 

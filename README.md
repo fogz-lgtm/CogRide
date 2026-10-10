@@ -37,6 +37,22 @@ GitHub Pages, with no backend and no subscription.
 - **Strava.** Rides upload by themselves as virtual rides marked "trainer".
   CogRide reads your weight, FTP and heart-rate zones from your Strava
   profile, notices when you lifted that day, and picks an easy ride to match.
+- **Race your best.** Every climb, loop, run or segment remembers your
+  fastest time. Next time, a pale ghost of that ride rides beside you, and
+  the caption says how far ahead or behind you are.
+- **Knows your week.** Tonight's pick reads your Strava week: a flush after
+  lifting, an easy spin after a long run or hard ride, climbing strength
+  after a quiet few days, otherwise Zone 2. Home shows the week's climbing,
+  runs and rides together, against an optional weekly goal.
+- **Climb goals.** "Climb 3,000 ft tonight": pick a climb and ride it up and
+  down until the number's done.
+- **Zone 2 check.** After steady rides, aerobic drift (Pa:HR) and efficiency
+  (watts per heartbeat), with the trend across weeks.
+- **Best power** over 5 s, 1, 5 and 20 min, this ride and all time.
+- **Any Strava segment.** Ride your starred segments, or paste any segment
+  link, on its real road and gradient.
+- **Gears and difficulty your way.** Zwift's gears or a 20 % easier climbing
+  set; trainer difficulty per road.
 - **Doesn't lose rides.** The ride is checkpointed every 30 s; if the page
   reloads mid-ride, Home offers to save it. Every ride exports as `.fit`.
 

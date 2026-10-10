@@ -152,6 +152,69 @@ function RunRow({ c, run, i, prefs }) {
   </button>`;
 }
 
+function SegmentRow({ c, seg, i, prefs }) {
+  const d = U.distance(seg.distanceM, prefs.units);
+  const g = U.elevation(seg.elevM, prefs.units);
+  return html`<button class="crow" onClick=${() => c.rideSegment(seg.id, seg.name)}>
+    <span class="folio">${pad(i + 1)}</span>
+    <span class="thumb"><${Scene} region="bayarea" tod=${tod(prefs)} seed=${`seg${seg.id}`} w=${52} h=${44} /></span>
+    <span><span class="title">${seg.name}</span><span class="meta">${d.value} ${d.unit} · +${g.value} ${g.unit} · ${seg.averageGrade?.toFixed?.(1) ?? '--'} %</span></span>
+    <span class="chip">Seg</span>
+  </button>`;
+}
+
+// Starred segments, a box to paste any segment link, and recent runs.
+function StravaContents({ c, s }) {
+  const [link, setLink] = useState('');
+  const { prefs } = s;
+  const segs = s.segments || [];
+  const runs = s.runs || [];
+  return html`
+    <div class="segpaste">
+      <label class="field"><input class="wide" inputmode="url" placeholder="Paste a Strava segment link" value=${link} onInput=${(e) => setLink(e.target.value)} /></label>
+      <button class="btn sec small" disabled=${!link.trim()} onClick=${() => c.rideSegment(link)}>Ride it</button>
+    </div>
+    <div class="k subhead">Starred segments</div>
+    ${s.segmentsState === 'loading'
+      ? html`<div class="empty">Fetching your segments…</div>`
+      : s.segmentsState === 'error'
+        ? html`<div class="empty">Couldn’t reach Strava. <button class="linkish" onClick=${() => c.loadSegments()}>Try again</button></div>`
+        : segs.length
+          ? segs.slice(0, 40).map((seg, i) => html`<${SegmentRow} c=${c} seg=${seg} i=${i} prefs=${prefs} />`)
+          : html`<div class="empty">Star a climb on Strava and it shows up here.</div>`}
+    <div class="k subhead">Your runs, as rides</div>
+    ${s.runsState === 'loading'
+      ? html`<div class="empty">Fetching your runs…</div>`
+      : s.runsState === 'error'
+        ? html`<div class="empty">Couldn’t reach Strava (${s.runsError}). <button class="linkish" onClick=${() => c.loadRuns()}>Try again</button></div>`
+        : runs.length
+          ? runs.slice(0, 30).map((run, i) => html`<${RunRow} c=${c} run=${run} i=${i} prefs=${prefs} />`)
+          : html`<div class="empty">No recent runs with real climbing yet.</div>`}`;
+}
+
+// This week's climbing, runs and rides together, with the weekly goal.
+function Week({ c, s }) {
+  const w = s.week;
+  const p = s.prefs;
+  if (!p.weeklyGoalM && (!w || (!w.elevM && !w.rideS && !w.runDistanceM))) return null;
+  const units = p.units;
+  const elev = U.elevation(w?.elevM ?? 0, units);
+  const run = U.distance(w?.runDistanceM ?? 0, units);
+  const h = Math.floor((w?.rideS ?? 0) / 3600);
+  const m = Math.round(((w?.rideS ?? 0) % 3600) / 60);
+  const goal = p.weeklyGoalM ? U.elevation(p.weeklyGoalM, units) : null;
+  const frac = p.weeklyGoalM ? Math.min(1, (w?.elevM ?? 0) / p.weeklyGoalM) : 0;
+  return html`<button class="week" onClick=${() => c.openSheet({ type: 'settings', focus: 'goals' })}>
+    <div class="k">This week${w?.localOnly ? ' · rides here' : ''}</div>
+    <div class="weekline">
+      <span class="num">+${elev.value}<span class="u">${elev.unit}</span></span>
+      ${goal && html`<span class="of">of ${goal.value} ${goal.unit}</span>`}
+      <span class="bits">${!w?.localOnly && w?.runDistanceM ? `${run.value} ${run.unit} run · ` : ''}${h ? `${h} h ` : ''}${m} min riding</span>
+    </div>
+    ${goal && html`<div class="ivbar"><i style=${{ width: `${frac * 100}%`, background: frac >= 1 ? 'var(--pz3)' : 'var(--paper-2)' }}></i></div>`}
+  </button>`;
+}
+
 function Contents({ c, s }) {
   const [tab, setTab] = useState(() => {
     try {
@@ -167,10 +230,14 @@ function Contents({ c, s }) {
     } catch {
       // ignore
     }
-    if (t === 'runs' && s.strava.connected && !s.runs && s.runsState !== 'loading') c.loadRuns();
+    if (t === 'runs' && s.strava.connected) loadStrava();
+  };
+  const loadStrava = () => {
+    if (!s.runs && s.runsState !== 'loading') c.loadRuns();
+    if (!s.segments && s.segmentsState !== 'loading') c.loadSegments();
   };
   useEffect(() => {
-    if (tab === 'runs' && s.strava.connected && !s.runs && s.runsState === 'idle') c.loadRuns();
+    if (tab === 'runs' && s.strava.connected) loadStrava();
   }, []);
   const { prefs } = s;
   let rows;
@@ -182,22 +249,16 @@ function Contents({ c, s }) {
     const list = allWorkouts(s.customWorkouts);
     rows = [html`<${AutopilotRow} c=${c} prefs=${prefs} i=${0} />`, ...list.map((w, i) => html`<${WorkoutRow} c=${c} w=${w} i=${i + 1} />`)];
   } else if (!s.strava.connected) {
-    rows = html`<div class="empty">Connect Strava and your recent runs and hikes show up here, ready to ride as routes.
+    rows = html`<div class="empty">Connect Strava and your starred segments and recent runs show up here, ready to ride on their real roads.
       <div><button class="btn sec small" onClick=${() => c.openSheet({ type: 'settings', focus: 'strava' })}>Connect Strava</button></div></div>`;
-  } else if (s.runsState === 'loading') {
-    rows = html`<div class="empty">Fetching your runs…</div>`;
-  } else if (s.runsState === 'error') {
-    rows = html`<div class="empty">Couldn’t reach Strava (${s.runsError}). <button class="linkish" onClick=${() => c.loadRuns()}>Try again</button></div>`;
-  } else if (s.runs && !s.runs.length) {
-    rows = html`<div class="empty">No recent runs with real climbing yet.</div>`;
   } else {
-    rows = (s.runs || []).slice(0, 30).map((run, i) => html`<${RunRow} c=${c} run=${run} i=${i} prefs=${prefs} />`);
+    rows = html`<${StravaContents} c=${c} s=${s} />`;
   }
   return html`
     <div class="contents-head">
       <span class="k">Contents</span>
       <div class="tabs" role="tablist">
-        ${['routes', 'workouts', 'runs'].map((t) => html`<button role="tab" aria-selected=${tab === t} class=${tab === t ? 'on' : ''} onClick=${() => choose(t)}>${t === 'runs' ? 'Your runs' : t}</button>`)}
+        ${['routes', 'workouts', 'runs'].map((t) => html`<button role="tab" aria-selected=${tab === t} class=${tab === t ? 'on' : ''} onClick=${() => choose(t)}>${t === 'runs' ? 'Strava' : t}</button>`)}
       </div>
     </div>
     <div class="contents">${rows}</div>`;
@@ -232,7 +293,7 @@ export function Home({ c }) {
     return () => clearInterval(t);
   }, []);
   const { prefs } = s;
-  const pick = tonightsPick({ liftedRecently: s.recent.liftedRecently, lastRide: s.lastRide });
+  const pick = tonightsPick({ recent: s.recent, lastRide: s.lastRide, units: prefs.units });
   const initials = (prefs.name || '').slice(0, 1).toUpperCase();
   const fileInput = (accept, onText) => {
     const input = document.createElement('input');
@@ -259,12 +320,14 @@ export function Home({ c }) {
         <div class="k dateline">${dateline(now)}</div>
         <h1 class="greeting">${greeting(now, prefs.name)}</h1>
         <p class="dek">${pick.dek}</p>
+        <${Week} c=${c} s=${s} />
         ${s.checkpoint && html`<${Recovery} c=${c} cp=${s.checkpoint} />`}
         <${Tiles} c=${c} s=${s} />
         <${Feature} c=${c} s=${s} pick=${pick} />
         <${Contents} c=${c} s=${s} />
         <div class="chips">
           <button class="chip" onClick=${() => c.openSheet({ type: 'plan', plan: { kind: 'free', id: 'free', title: 'Free ride' } })}>Free ride</button>
+          <button class="chip" onClick=${() => c.openSheet({ type: 'plan', plan: { kind: 'vert', id: 'vert', title: 'Climb goal' } })}>Climb goal</button>
           <button class="chip" onClick=${() => c.openSheet({ type: 'plan', plan: c.rampTest() })}>FTP ramp test</button>
           <button class="chip" onClick=${() => fileInput('.gpx,application/gpx+xml', (t, n) => c.importGpx(t, n))}>Import GPX</button>
           <button class="chip" onClick=${() => c.openSheet({ type: 'editor' })}>Write a workout</button>

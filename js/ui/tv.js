@@ -75,7 +75,7 @@ function RoadLine({ route, snap, units }) {
 
 const N = ({ k, v, u, cls = 'num', style, kstyle }) => html`<div><div class="k" style=${kstyle}>${k}</div><div class=${cls} style=${style}>${v}${u && html`<span class="u">${u}</span>`}</div></div>`;
 
-export function TvMode({ c, s, snap, mode }) {
+export function TvMode({ c, s, snap, mode, race = null }) {
   const flood = useFlood(c);
   const { prefs, plan, route } = s;
   const units = prefs.units;
@@ -115,7 +115,9 @@ export function TvMode({ c, s, snap, mode }) {
     row2 = [html`<${N} k="Heart" v=${snap.heartRate ?? '--'} u="bpm" />`, html`<${N} k="Cadence" v=${snap.cadence || '--'} u="rpm" />`];
     const d = U.distance(snap.distance, units);
     const climb = U.elevation(snap.climbed, units);
-    ctx = [shortName(route?.name ?? plan.title), `${d.value} ${d.unit} · ▲ ${climb.value} ${climb.unit}`];
+    const vs = race?.delta != null ? `${clock(Math.round(Math.abs(race.delta)))} ${race.delta >= 0 ? 'ahead' : 'behind'} · ` : '';
+    const goal = plan.goalM ? ` of ${U.elevation(plan.goalM, units).value}` : '';
+    ctx = [shortName(route?.name ?? plan.title), `${vs}${d.value} ${d.unit} · ▲ ${climb.value}${goal} ${climb.unit}`];
     const r = snap.route;
     progress = route && r ? (route.loop ? r.d / route.length : r.direction > 0 ? r.d / route.length : 1 - r.d / route.length) : 0;
   }

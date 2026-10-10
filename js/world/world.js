@@ -34,6 +34,9 @@
 //   streamChunks(x, z, budget?)     route-space; returns the number of wanted
 //                                   leaves still missing or in flight (0 =
 //                                   complete); normally called by update()
+//   setGhost(total | null)          ghost of your best (total distance ridden
+//                                   on its attempt), drawn translucent beside
+//                                   you; null hides it
 //   setRunning(bool) / running      false = update/render/streaming are
 //                                   no-ops (TV mode, pause sheet, summary)
 //   start(getRide) / stop()         optional built-in rAF loop; getRide()
@@ -377,6 +380,9 @@ export class World {
 
     this.rider = createRider();
     scene.add(this.rider.group);
+    this.ghost = null; // created on first use
+    this.ghostTarget = null;
+    this.ghostDisplay = null;
 
     this.glowTexture = radialTexture(64, 2.2);
     this.glows = [];
@@ -1165,6 +1171,7 @@ export class World {
     ra.lean = D.lean;
     ra.blink = !!this.theme.rider?.blink;
     this.rider.update(dt, ra);
+    this.updateGhost(dt, ra);
 
     this.updateCamera(dt, s, px, py, pz, speed);
     this.updateLights(px, py, pz);
@@ -1182,6 +1189,49 @@ export class World {
 
     this.streamChunks(cam.position.x, -cam.position.z, 1);
     this.stats.cpuMs = now() - t0;
+  }
+
+  // ---------------------------------------------------------------- ghost
+
+  setGhost(total) {
+    this.ghostTarget = total == null || !Number.isFinite(total) ? null : total;
+    if (this.ghostTarget == null) this.ghostDisplay = null;
+  }
+
+  makeGhost() {
+    // Paper-coloured and see-through: a memory, not a rival.
+    const p = '#F3EBDD';
+    const g = createRider({ jersey: p, band: p, helmet: p, sock: p, skin: '#CDC1AF', skinShade: '#948877', shorts: '#CDC1AF', shoe: '#CDC1AF', bike: '#CDC1AF', bikeLit: p, tyre: '#948877' });
+    g.material.transparent = true;
+    g.material.opacity = 0.34;
+    g.material.depthWrite = false;
+    g.glow.visible = false;
+    g.light.visible = false;
+    g.shadow.visible = false;
+    g.group.traverse((o) => (o.renderOrder = 6));
+    this.scene.add(g.group);
+    return g;
+  }
+
+  updateGhost(dt, ra) {
+    const target = this.ghostTarget;
+    if (target == null) {
+      if (this.ghost) this.ghost.group.visible = false;
+      return;
+    }
+    this.ghost ??= this.makeGhost();
+    const g = this.ghost;
+    // Glide toward the reported position (it arrives 4× a second).
+    if (this.ghostDisplay == null || Math.abs(target - this.ghostDisplay) > 200) this.ghostDisplay = target;
+    else this.ghostDisplay += (target - this.ghostDisplay) * Math.min(1, dt * 3);
+    const s = this.sample(this.ghostDisplay, this._s2);
+    const fx = Math.sin(s.heading);
+    const fz = Math.cos(s.heading);
+    const lane = this.laneOffset() - 1.1; // ride side by side, nearer the centre line
+    g.group.visible = true;
+    g.group.position.set(s.x + fz * lane, s.elevation + 0.05, -(s.z - fx * lane));
+    g.group.rotation.set(Math.atan(s.grade / 100), -s.heading, 0);
+    g.update(dt, ra);
   }
 
   updateCamera(dt, s, px, py, pz, speed) {
@@ -1466,6 +1516,7 @@ export class World {
     this.glowTexture.dispose();
     this.sky.dispose();
     this.rider.dispose();
+    this.ghost?.dispose();
     this.worldMaterial.dispose();
     this.renderer.dispose();
   }

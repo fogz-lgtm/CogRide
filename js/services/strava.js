@@ -186,7 +186,47 @@ export async function fetchRecentActivities({ afterS, perPage = 15 } = {}, opts)
     sportType: a.sport_type || a.type,
     start: Date.parse(a.start_date),
     elapsedS: a.elapsed_time || 0,
+    movingS: a.moving_time || 0,
+    distanceM: a.distance || 0,
+    elevM: a.total_elevation_gain || 0,
+    sufferScore: a.suffer_score ?? null,
+    trainer: !!a.trainer,
   }));
+}
+
+// ---------------------------------------------------------------- segments
+
+// "https://www.strava.com/segments/229781", "strava.com/segments/229781?x" or "229781".
+export function parseSegmentId(text) {
+  const s = String(text || '').trim();
+  const m = s.match(/segments\/(\d+)/) || s.match(/^(\d{3,})$/);
+  return m ? m[1] : null;
+}
+
+export async function fetchStarredSegments(opts) {
+  const list = await api('/segments/starred?per_page=100', opts);
+  return list.map((s) => ({
+    id: String(s.id),
+    name: s.name,
+    activityType: s.activity_type,
+    distanceM: s.distance,
+    averageGrade: s.average_grade,
+    elevM: Math.max(0, (s.elevation_high ?? 0) - (s.elevation_low ?? 0)),
+    place: [s.city, s.state].filter(Boolean).join(', '),
+  }));
+}
+
+// A segment's real road and elevation, to ride as a route.
+export async function fetchSegmentTrack(id, opts) {
+  if (!/^\d+$/.test(String(id))) throw new Error('That isn’t a Strava segment link');
+  const [segment, streams] = await Promise.all([
+    api(`/segments/${id}`, opts),
+    api(`/segments/${id}/streams?keys=latlng,altitude,distance&key_by_type=true`, opts),
+  ]);
+  const latlng = streams?.latlng?.data;
+  if (!Array.isArray(latlng) || latlng.length < 2) throw new Error('This segment has no track');
+  const alt = streams.altitude?.data;
+  return { name: segment.name, points: latlng.map(([lat, lon], i) => ({ lat, lon, ele: alt?.[i] ?? null })) };
 }
 
 const STRENGTH = ['WeightTraining', 'Workout', 'Crossfit', 'HighIntensityIntervalTraining'];

@@ -29,6 +29,10 @@ export const DEFAULT_PREFS = {
   workoutRouteId: 'fogline-coast',
   freeRouteId: 'fogline-coast',
   tvIntroSeen: false,
+  gearTable: 'zwift', // 'zwift' | 'climbing'
+  ghost: true, // race the ghost of your best on roads you've ridden
+  weeklyGoalM: 0, // weekly climbing goal (runs + rides), 0 = off
+  routeDifficulty: {}, // per-road trainer difficulty overrides
   ftpSource: null, // 'strava' | 'ramp' | 'manual'
   weightSource: null,
 };

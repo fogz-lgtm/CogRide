@@ -5,10 +5,27 @@ import { ZWIFT_GEAR_VALUES } from '../devices/zwiftProtocol.js';
 
 export const GEAR_COUNT = 24;
 export const START_GEAR = 8; // Zwift starts virtual shifting in gear 8 (1.68)
-export const GEAR_RATIOS = ZWIFT_GEAR_VALUES.map((v) => Math.round(v / 100) / 100);
 
+// Gear tables as the trainer receives them (ratio × 10000). 'zwift' is
+// Zwift's own; 'climbing' is the same spread shifted 20 % easier, for long
+// steep climbs at modest power.
+export const GEAR_TABLES = {
+  zwift: ZWIFT_GEAR_VALUES,
+  climbing: ZWIFT_GEAR_VALUES.map((v) => Math.round(v * 0.8)),
+};
+let table = 'zwift';
+const ratios = (name) => GEAR_TABLES[name].map((v) => Math.round(v / 100) / 100);
+export let GEAR_RATIOS = ratios(table);
+
+export function setGearTable(name) {
+  table = GEAR_TABLES[name] ? name : 'zwift';
+  GEAR_RATIOS = ratios(table);
+}
+
+export const gearTable = () => table;
 export const clampGear = (gear) => Math.min(GEAR_COUNT, Math.max(1, Math.round(gear)));
 export const ratioFor = (gear) => GEAR_RATIOS[clampGear(gear) - 1];
+export const gearValueFor = (gear) => GEAR_TABLES[table][clampGear(gear) - 1];
 
 // What the rider feels: Zwift halves descents, then applies Trainer
 // Difficulty (default 50%) to everything; a KICKR CORE tops out at 16%.

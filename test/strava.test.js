@@ -153,3 +153,22 @@ test('queue: re-queueing a ride replaces it; removeQueued drops it; flush keeps 
   // B uploaded and removed; C (queued mid-flush) is still waiting.
   assert.equal(S.pendingUploads(), 1);
 });
+
+test('segment links and ids parse', () => {
+  assert.equal(S.parseSegmentId('https://www.strava.com/segments/229781'), '229781');
+  assert.equal(S.parseSegmentId('strava.com/segments/229781?filter=overall'), '229781');
+  assert.equal(S.parseSegmentId(' 229781 '), '229781');
+  assert.equal(S.parseSegmentId('https://www.strava.com/activities/5'), null);
+});
+
+test('segment track becomes points with elevation', async () => {
+  S.saveStrava({ clientId: '1', clientSecret: SECRET, accessToken: 'T', refreshToken: 'R', expiresAt: 2e9, scope: 'read' });
+  const f = fakeFetch((url) =>
+    url.includes('/streams')
+      ? { body: { latlng: { data: [[37.88, -121.91], [37.881, -121.912]] }, altitude: { data: [200, 230] } } }
+      : { body: { id: 9, name: 'Diablo North Gate' } },
+  );
+  const t = await S.fetchSegmentTrack('9', { fetchImpl: f });
+  assert.equal(t.name, 'Diablo North Gate');
+  assert.deepEqual(t.points[1], { lat: 37.881, lon: -121.912, ele: 230 });
+});

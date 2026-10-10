@@ -16,7 +16,7 @@
 import { BleDevice, writeCharacteristic, subscribe, bytesOf, UUID } from './bleDevice.js';
 import * as ZP from './zwiftProtocol.js';
 import { FTMS_SERVICE, INDOOR_BIKE_DATA, CONTROL_POINT, OpCode, parseIndoorBikeData, parseControlPointResponse, encodeSetTargetPower, encodeSimulation } from './ftmsTrainer.js';
-import { gearedSimulation, estimatePhysicalRatio, ratioFor, ZWIFT_CW, ZWIFT_CRR } from '../core/gearing.js';
+import { gearedSimulation, estimatePhysicalRatio, ratioFor, gearValueFor, ZWIFT_CW, ZWIFT_CRR } from '../core/gearing.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const now = () => Date.now();
@@ -187,10 +187,10 @@ export class SmartTrainer extends BleDevice {
     // Zwift's order: masses + gear, then the full road, then read the gear back.
     // (Trainers ignore gear changes until a road has been sent.)
     const gear = this.target.mode === 'sim' ? this.target.gear : 8;
-    await this.zwiftWrite(ZP.bikeSim({ gearRatioX10000: ZP.ZWIFT_GEAR_VALUES[gear - 1], ...this.masses }));
+    await this.zwiftWrite(ZP.bikeSim({ gearRatioX10000: gearValueFor(gear), ...this.masses }));
     await this.zwiftWrite(ZP.envSim({ windMps: 0, gradePct: this.target.gradePct ?? 0, cw: ZWIFT_CW, crr: ZWIFT_CRR }));
     await this.zwiftWrite(ZP.getObject(ZP.DataObject.SIM_VIRT_GEAR_RATIO));
-    this.sent = { ...this.sent, mode: 'sim', gear, gradePct: this.target.gradePct ?? 0, gradeAt: now(), masses: { ...this.masses } };
+    this.sent = { ...this.sent, mode: 'sim', gear, gearValue: gearValueFor(gear), gradePct: this.target.gradePct ?? 0, gradeAt: now(), masses: { ...this.masses } };
   }
 
   onZwiftFrame(bytes) {
@@ -302,15 +302,16 @@ export class SmartTrainer extends BleDevice {
     }
 
     if (zwift) {
-      if (!sameMasses(sent.masses, this.masses) || sent.gear !== target.gear) {
+      // (A different gear table changes the value without changing the gear number.)
+      if (!sameMasses(sent.masses, this.masses) || sent.gear !== target.gear || sent.gearValue !== gearValueFor(target.gear)) {
         const gear = target.gear;
         const massesChanged = !sameMasses(sent.masses, this.masses);
         return async () => {
-          const value = ZP.ZWIFT_GEAR_VALUES[gear - 1];
-          await this.zwiftWrite(massesChanged ? ZP.bikeSim({ gearRatioX10000: value, ...this.masses }) : ZP.setGear(gear));
+          const value = gearValueFor(gear);
+          await this.zwiftWrite(massesChanged ? ZP.bikeSim({ gearRatioX10000: value, ...this.masses }) : ZP.bikeSim({ gearRatioX10000: value }));
           this.recentGearValues = [...this.recentGearValues, value].slice(-3);
           await this.zwiftWrite(ZP.getObject(ZP.DataObject.SIM_VIRT_GEAR_RATIO));
-          this.sent = { ...this.sent, mode: 'sim', gear, masses: { ...this.masses } };
+          this.sent = { ...this.sent, mode: 'sim', gear, gearValue: value, masses: { ...this.masses } };
           this.dispatchEvent(new CustomEvent('gear-sent', { detail: { gear } }));
         };
       }

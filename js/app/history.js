@@ -84,3 +84,28 @@ export function loadCustomWorkouts() {
 export function saveCustomWorkouts(list) {
   write(WORKOUTS_KEY, list);
 }
+
+// ---------------------------------------------------------------- bests
+
+const BESTS_KEY = 'cogride.bests';
+const POWER_KEY = 'cogride.powerBests';
+
+// Your best time over each road: { [routeId]: { timeS, splits, at } }.
+export function loadBest(routeId) {
+  return routeId ? read(BESTS_KEY, {})[routeId] ?? null : null;
+}
+
+export function saveBest(routeId, best) {
+  if (!routeId) return;
+  const all = read(BESTS_KEY, {});
+  all[routeId] = best;
+  write(BESTS_KEY, all);
+}
+
+export function loadPowerBests() {
+  return read(POWER_KEY, {});
+}
+
+export function savePowerBests(bests) {
+  write(POWER_KEY, bests);
+}

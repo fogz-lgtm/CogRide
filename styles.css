@@ -2283,3 +2283,86 @@ select {
     height: calc(44 * var(--s));
   }
 }
+.goalbar {
+  margin-top: calc(8 * var(--s));
+  height: calc(4 * var(--s));
+}
+.week {
+  display: block;
+  width: 100%;
+  margin-top: 16px;
+  padding: 12px 0 2px;
+  border-top: 1px solid var(--rule);
+  text-align: left;
+}
+.week .weekline {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.week .num {
+  font-size: 30px;
+}
+.week .num .u {
+  font-size: 13px;
+}
+.week .of {
+  font: 600 14px/1 var(--sans);
+  color: var(--paper-2);
+}
+.week .bits {
+  margin-left: auto;
+  font: 400 italic 14px/1.2 var(--serif);
+  color: var(--paper-3);
+}
+.week .ivbar {
+  margin-top: 10px;
+  height: 4px;
+}
+.segpaste {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 0 4px;
+}
+.segpaste .field input.wide {
+  width: 100%;
+}
+.subhead {
+  display: block;
+  margin: 18px 0 6px;
+}
+.racecard,
+.goalcard,
+.aerocard {
+  margin-top: 16px;
+}
+.aerorow {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: center;
+}
+.aerospark svg {
+  width: 80px;
+  height: 28px;
+  display: block;
+}
+.pbests .pb {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 1px 5px;
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink-1);
+  letter-spacing: 0.05em;
+}
+.pbests .pball {
+  margin-top: 6px;
+  font: 400 italic 12px/1.2 var(--serif);
+  color: var(--paper-3);
+  min-height: 14px;
+}
