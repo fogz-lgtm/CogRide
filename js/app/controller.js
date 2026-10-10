@@ -151,7 +151,10 @@ export class Controller extends EventTarget {
     }
     if (strava.isConnected()) {
       this.checkRecent();
-      strava.flushUploadQueue().catch(() => {});
+      strava
+        .flushUploadQueue()
+        .catch(() => {})
+        .finally(() => this.set({ strava: this.stravaState() }));
     }
     if (this.params.has('sim')) this.useSimulator();
   }
@@ -237,12 +240,19 @@ export class Controller extends EventTarget {
   async connectTrainer() {
     if (!bluetoothAvailable()) return this.openSheet({ type: 'bluefy' });
     const t = new SmartTrainer();
-    this.attachTrainer(t);
+    // Keep a working trainer until the new one is actually connected
+    // (a cancelled picker shouldn't drop it).
+    const waking = (e) => e.detail.state === 'connecting' && this.setDevice('trainer', { state: 'connecting' });
+    t.addEventListener('status', waking);
     try {
       await t.connect();
+      t.removeEventListener('status', waking);
+      this.attachTrainer(t);
     } catch (err) {
+      t.removeEventListener('status', waking);
       const msg = this.explainBleError(err);
-      if (this.trainer === t) this.setDevice('trainer', { state: 'off', message: msg || '' });
+      if (this.trainer?.connected) this.attachTrainer(this.trainer, { refresh: true });
+      else this.setDevice('trainer', { state: 'off', message: msg || '' });
       if (msg) this.toast({ title: 'Trainer didn’t connect', body: msg });
     }
   }
@@ -253,13 +263,17 @@ export class Controller extends EventTarget {
     sim.connect();
   }
 
-  attachTrainer(t) {
+  attachTrainer(t, { refresh = false } = {}) {
+    const sim = t instanceof SimulatedTrainer;
+    if (refresh) {
+      this.setDevice('trainer', { state: t.connected ? 'ready' : 'off', name: sim ? 'Simulator' : t.name, path: t.path, sim, message: '' });
+      return;
+    }
     if (this.trainer && this.trainer !== t) {
       this.trainer.disconnect();
     }
     this.trainer = t;
     this.hub.attach(t);
-    const sim = t instanceof SimulatedTrainer;
     const update = () =>
       this.setDevice('trainer', {
         state: t.state === 'connected' ? 'ready' : t.state === 'connecting' ? 'connecting' : 'off',
@@ -335,14 +349,20 @@ export class Controller extends EventTarget {
     m.addEventListener('data', (e) => this.hrHub.dispatchEvent(new CustomEvent('data', { detail: e.detail })));
     const update = () =>
       this.setDevice('hr', { state: m.state === 'connected' ? 'ready' : m.state === 'connecting' ? 'connecting' : 'off', name: m.name, message: m.message || '' });
-    m.addEventListener('status', update);
-    if (this.hrm) this.hrm.disconnect();
-    this.hrm = m;
+    const waking = (e) => e.detail.state === 'connecting' && this.setDevice('hr', { state: 'connecting' });
+    m.addEventListener('status', waking);
     try {
       await m.connect();
+      m.removeEventListener('status', waking);
+      if (this.hrm && this.hrm !== m) this.hrm.disconnect();
+      this.hrm = m;
+      m.addEventListener('status', update);
+      update();
     } catch (err) {
+      m.removeEventListener('status', waking);
       const msg = this.explainBleError(err);
-      this.setDevice('hr', { state: 'off', message: msg || '' });
+      if (this.hrm?.connected) this.setDevice('hr', { state: 'ready', name: this.hrm.name, message: '' });
+      else this.setDevice('hr', { state: 'off', message: msg || '' });
       if (msg) this.toast({ title: 'Heart rate didn’t connect', body: msg });
     }
   }
@@ -364,7 +384,7 @@ export class Controller extends EventTarget {
     if (this.held.has(1) && this.held.has(-1)) {
       this.shifter.releaseAll();
       // The first button of the chord already shifted; take it back quietly.
-      if (this.lastPress && now - this.lastPress.at < 400) {
+      if (this.lastPress?.changed && now - this.lastPress.at < 400) {
         this.quiet = true;
         this.engine.shift(-this.lastPress.dir);
         this.quiet = false;
@@ -373,8 +393,15 @@ export class Controller extends EventTarget {
       this.chordTimer = setTimeout(() => this.chord(), 350);
       return;
     }
-    this.lastPress = { dir, at: now };
+    const before = this.helmMark();
     this.shifter.press(dir);
+    this.lastPress = { dir, at: now, changed: this.helmMark() !== before };
+  }
+
+  // What a Click changes: gear, ERG bias or the autopilot's HR target.
+  helmMark() {
+    const e = this.engine;
+    return `${e.gear}|${e.bias}|${e.autopilot?.targetHr ?? ''}`;
   }
 
   release(dir) {
@@ -400,6 +427,7 @@ export class Controller extends EventTarget {
       const cost = Math.round(snap.power * (d.ratio / before - 1));
       if (!this.quiet) sound.playShift(d.direction, d.gear);
       this.emit('shift', { ...d, cost, cadence: snap.cadence, quiet: this.quiet });
+      this.live.set({ snap });
     });
     on('limit', (d) => {
       sound.playLimit();
@@ -409,10 +437,12 @@ export class Controller extends EventTarget {
       if (d.limited) sound.playLimit();
       else if (!this.quiet) sound.playErgNudge(d.direction);
       this.emit('bias', d);
+      this.publishSoon();
     });
     on('autopilot-target', (d) => {
       if (!this.quiet) sound.playAutopilotNudge();
       this.emit('autopilot-target', d);
+      this.publishSoon();
     });
     on('interval', (d) => {
       if (d.index > 0) {
@@ -453,17 +483,27 @@ export class Controller extends EventTarget {
     });
   }
 
+  // Bias and HR-target changes land before the engine has re-targeted the
+  // trainer; publish on the next microtask so the snapshot includes both.
+  publishSoon() {
+    queueMicrotask(() => this.live.set({ snap: this.engine.snapshot() }));
+  }
+
   // ---------------------------------------------------------------- ride lifecycle
 
   // Called from a tap: unlocks audio and the wake lock in the same gesture.
   ride(plan) {
     sound.unlockAudio();
     this.requestWakeLock();
+    // A ride left behind by a crash would be overwritten by this one's
+    // checkpoints: save it first.
+    this.salvageCheckpoint();
     const prefs = this.state.prefs;
     const e = this.engine;
     e.updateSettings(engineSettings(prefs));
     e.setAutopilot(null);
     e.setWorkout(null);
+    e.setRoute(null);
     e.setErgEnabled(true);
     e.reset();
     if (plan.workout) e.setWorkout(plan.workout);
@@ -524,11 +564,18 @@ export class Controller extends EventTarget {
     this.set({ rideState: 'riding', sheet: null });
   }
 
+  // Back to a flat road in the current gear (nothing left steering the trainer).
+  idleEngine() {
+    const e = this.engine;
+    e.setWorkout(null);
+    e.setAutopilot(null);
+    e.setRoute(null);
+    e.reset();
+  }
+
   // Leave a ride that never started.
   leave() {
-    this.engine.reset();
-    this.engine.setWorkout(null);
-    this.engine.setAutopilot(null);
+    this.idleEngine();
     this.releaseWakeLock();
     this.set({ screen: 'home', plan: null, route: null, rideState: 'idle', tv: false, sheet: null });
     this.applySound();
@@ -545,8 +592,8 @@ export class Controller extends EventTarget {
     const { plan, route, prefs, recent } = this.state;
     const photo = this.capturePhoto?.() ?? null;
     const ride = this.engine.finish();
-    this.engine.setWorkout(null);
-    this.engine.setAutopilot(null);
+    const workoutDone = this.engine.workoutDone;
+    this.idleEngine();
     this.releaseWakeLock();
     if (ride.samples.length < 60) {
       history.clearCheckpoint();
@@ -569,8 +616,9 @@ export class Controller extends EventTarget {
       laps: this.laps,
       rampFtp: plan?.kind === 'ramp' ? this.rampFtp ?? ftpFromRamp(ride.samples.map((s) => s.power ?? 0)) : null,
       liftedBefore,
-      workoutDone: this.engine.workoutDone,
+      workoutDone,
     });
+    this.keepForStrava(result);
     history.clearCheckpoint();
     this.set({ screen: 'summary', result, rideState: 'done', tv: false, sheet: null, checkpoint: null, lastRide: result.entry, toast: null });
     this.applySound();
@@ -633,6 +681,56 @@ export class Controller extends EventTarget {
     };
   }
 
+  // Park the FIT in the upload queue before trying, so a closed app or a
+  // later Strava connection still gets it there. Removed once uploaded.
+  keepForStrava(result) {
+    if (result.upload.status === 'busy' || result.upload.status === 'off') {
+      strava.queueUpload(result.fit, { name: result.name, description: result.description, externalId: result.id });
+      this.set({ strava: this.stravaState() });
+    }
+  }
+
+  // Quietly save a crashed ride's checkpoint (history + Strava queue).
+  salvageCheckpoint() {
+    const cp = history.loadCheckpoint();
+    if (!cp) return false;
+    const result = this.resultFromCheckpoint(cp);
+    this.keepForStrava(result);
+    history.clearCheckpoint();
+    this.set({ checkpoint: null, lastRide: result.entry });
+    if (strava.canUpload()) {
+      strava
+        .flushUploadQueue()
+        .catch(() => {})
+        .finally(() => this.set({ strava: this.stravaState() }));
+    }
+    return true;
+  }
+
+  resultFromCheckpoint(cp) {
+    const samples = cp.samples;
+    let climbed = 0;
+    for (let i = 1; i < samples.length; i++) {
+      const d = (samples[i].altitude ?? 0) - (samples[i - 1].altitude ?? 0);
+      if (d > 0) climbed += d;
+    }
+    return this.buildResult({
+      samples,
+      startedAt: cp.meta?.startedAt ?? samples[0].time,
+      plan: cp.meta?.plan ?? null,
+      route: cp.meta?.routeName ? { name: cp.meta.routeName, kind: cp.meta.routeKind } : null,
+      prefs: this.state.prefs,
+      photo: null,
+      climbedM: climbed,
+      movingTimeS: samples.length,
+      summited: false,
+      laps: 0,
+      rampFtp: null,
+      liftedBefore: false,
+      workoutDone: false,
+    });
+  }
+
   setUpload(patch) {
     const result = this.state.result;
     if (!result) return;
@@ -666,29 +764,8 @@ export class Controller extends EventTarget {
   recoverCheckpoint() {
     const cp = history.loadCheckpoint();
     if (!cp) return this.set({ checkpoint: null });
-    const prefs = this.state.prefs;
-    const samples = cp.samples;
-    let climbed = 0;
-    for (let i = 1; i < samples.length; i++) {
-      const d = (samples[i].altitude ?? 0) - (samples[i - 1].altitude ?? 0);
-      if (d > 0) climbed += d;
-    }
-    const plan = cp.meta?.plan ?? null;
-    const result = this.buildResult({
-      samples,
-      startedAt: cp.meta?.startedAt ?? samples[0].time,
-      plan,
-      route: cp.meta?.routeName ? { name: cp.meta.routeName, kind: cp.meta.routeKind } : null,
-      prefs,
-      photo: null,
-      climbedM: climbed,
-      movingTimeS: samples.length,
-      summited: false,
-      laps: 0,
-      rampFtp: null,
-      liftedBefore: false,
-      workoutDone: false,
-    });
+    const result = this.resultFromCheckpoint(cp);
+    this.keepForStrava(result);
     history.clearCheckpoint();
     this.set({ screen: 'summary', result, checkpoint: null, lastRide: result.entry });
     if (result.upload.status === 'busy') this.upload();

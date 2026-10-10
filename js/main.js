@@ -25,9 +25,14 @@ if ('serviceWorker' in navigator && build && !build.startsWith('__')) {
         const w = reg.installing;
         w?.addEventListener('statechange', () => w.state === 'installed' && navigator.serviceWorker.controller && ready());
       });
-      c.applyUpdate = () => reg.waiting?.postMessage('skip-waiting');
-      // Never reload mid-ride: only from the home screen.
-      navigator.serviceWorker.addEventListener('controllerchange', () => c.state.screen === 'home' && location.reload());
+      let updating = false;
+      c.applyUpdate = () => {
+        updating = true;
+        reg.waiting?.postMessage('skip-waiting');
+      };
+      // Reload only for an update he asked for (from Home, between rides) —
+      // not when the first install takes control.
+      navigator.serviceWorker.addEventListener('controllerchange', () => updating && location.reload());
     })
     .catch(() => {});
 }

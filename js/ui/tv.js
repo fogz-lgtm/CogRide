@@ -90,7 +90,8 @@ export function TvMode({ c, s, snap, mode }) {
     const d = U.distance(snap.distance, units);
     const climb = U.elevation(snap.climbed, units);
     ctx = [shortName(route?.name ?? plan.title), `${d.value} ${d.unit} · ▲ ${climb.value} ${climb.unit}`];
-    progress = route ? (route.loop ? snap.route?.d / route.length : snap.route?.direction > 0 ? snap.route.d / route.length : 1 - snap.route.d / route.length) : 0;
+    const r = snap.route;
+    progress = route && r ? (route.loop ? r.d / route.length : r.direction > 0 ? r.d / route.length : 1 - r.d / route.length) : 0;
   }
 
   const pos = w && flood.index != null ? workPosition(c.engine.workout ?? plan.workout ?? { steps: [] }, flood.index) : null;

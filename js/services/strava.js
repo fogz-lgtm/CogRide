@@ -240,7 +240,7 @@ export async function uploadFit(bytes, { name, description, externalId } = {}, {
     upload = await api(`/uploads/${upload.id_str || upload.id}`, { fetchImpl });
   }
   if (upload.error) {
-    const dup = /duplicate of (?:<a href='\/activities\/)?(\d+)/i.exec(upload.error);
+    const dup = /duplicate of (?:activity\s+|<a href='\/activities\/)?(\d+)/i.exec(upload.error);
     if (dup) return { activityId: dup[1], duplicate: true };
     throw new Error(upload.error);
   }
@@ -285,18 +285,28 @@ export function pendingUploads() {
   return read(QUEUE_KEY, []).length;
 }
 
-export async function flushUploadQueue(opts) {
+let flushing = null;
+
+export function flushUploadQueue(opts) {
+  flushing ??= flush(opts).finally(() => (flushing = null));
+  return flushing;
+}
+
+async function flush(opts) {
   if (!canUpload()) return [];
   const queue = read(QUEUE_KEY, []);
   const done = [];
-  const left = [];
   for (const item of queue) {
     try {
-      done.push(await uploadFit(fromBase64(item.fit), item.meta, opts));
+      done.push({ ...(await uploadFit(fromBase64(item.fit), item.meta, opts)), externalId: item.meta?.externalId });
+      // Re-read: rides may have been queued while this one uploaded.
+      write(
+        QUEUE_KEY,
+        read(QUEUE_KEY, []).filter((q) => q.queuedAt !== item.queuedAt || q.meta?.externalId !== item.meta?.externalId),
+      );
     } catch {
-      left.push(item);
+      // stays queued for next time
     }
   }
-  write(QUEUE_KEY, left);
   return done;
 }

@@ -126,3 +126,30 @@ test('athlete profile maps weight, FTP, units and HR zones', async () => {
   assert.equal(p.ftp, 161);
   assert.equal(p.hrZones[1].max, 151);
 });
+
+test('duplicate uploads are recognised in either wording', async () => {
+  S.saveStrava({ clientId: '1', clientSecret: SECRET, accessToken: 'T', refreshToken: 'R', expiresAt: 2e9, scope: 'activity:write' });
+  const f = fakeFetch((url, init, n) => (n === 1 ? { status: 201, body: { id: 7, id_str: '7' } } : { body: { id: 7, error: 'ride.fit duplicate of activity 987654' } }));
+  assert.deepEqual(await S.uploadFit(new Uint8Array([1]), {}, { fetchImpl: f, pollMs: 1 }), { activityId: '987654', duplicate: true });
+});
+
+test('queue: re-queueing a ride replaces it; removeQueued drops it; flush keeps rides queued meanwhile', async () => {
+  S.saveStrava({ clientId: '1', clientSecret: SECRET, accessToken: 'T', refreshToken: 'R', expiresAt: 2e9, scope: 'activity:write' });
+  S.queueUpload(new Uint8Array([1]), { name: 'A', externalId: 'a' });
+  S.queueUpload(new Uint8Array([2]), { name: 'A again', externalId: 'a' });
+  assert.equal(S.pendingUploads(), 1);
+  S.removeQueued('a');
+  assert.equal(S.pendingUploads(), 0);
+  S.queueUpload(new Uint8Array([3]), { name: 'B', externalId: 'b' });
+  let queuedDuringFlush = false;
+  const f = fakeFetch(() => {
+    if (!queuedDuringFlush) {
+      queuedDuringFlush = true;
+      S.queueUpload(new Uint8Array([4]), { name: 'C', externalId: 'c' });
+    }
+    return { status: 201, body: { id: 1, id_str: '1', activity_id: 5 } };
+  });
+  await S.flushUploadQueue({ fetchImpl: f, pollMs: 1 });
+  // B uploaded and removed; C (queued mid-flush) is still waiting.
+  assert.equal(S.pendingUploads(), 1);
+});

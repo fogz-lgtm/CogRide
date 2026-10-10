@@ -127,27 +127,31 @@ function useRail(c) {
 }
 
 // Tap the upper half of the helm for harder, the lower half for easier.
-function helmPointer(c) {
-  let held = 0;
-  const up = () => {
-    if (held) c.release(held);
-    held = 0;
-  };
-  return {
+// (The held direction must survive re-renders, which happen 4× a second.)
+function useHelmPointer(c) {
+  const held = useRef(0);
+  const handlers = useRef(null);
+  handlers.current ??= {
     onPointerDown: (e) => {
       const r = e.currentTarget.getBoundingClientRect();
-      held = e.clientY < r.top + r.height / 2 ? 1 : -1;
-      c.press(held);
+      if (held.current) c.release(held.current);
+      held.current = e.clientY < r.top + r.height / 2 ? 1 : -1;
+      e.currentTarget.setPointerCapture?.(e.pointerId);
+      c.press(held.current);
     },
-    onPointerUp: up,
-    onPointerCancel: up,
-    onPointerLeave: up,
+    onPointerUp: () => {
+      if (held.current) c.release(held.current);
+      held.current = 0;
+    },
   };
+  handlers.current.onPointerCancel = handlers.current.onPointerUp;
+  useEffect(() => () => held.current && c.release(held.current), [c]);
+  return handlers.current;
 }
 
 function GearHelm({ c, snap, rail }) {
   const notches = Array.from({ length: snap.gearCount }, (_, i) => i + 1);
-  return html`<div class="helm" ...${helmPointer(c)}>
+  return html`<div class="helm" ...${useHelmPointer(c)}>
     <div class="k">Gear</div>
     <${RollNumber} value=${snap.gear} cls="snum" boxClass="gear" shakeKey=${rail.limit} />
     <div class="halo"></div>
@@ -175,7 +179,7 @@ function ErgHelm({ c, snap, ftp }) {
   const pct = baseW != null ? Math.round((baseW / ftp) * 100) : null;
   const biasPct = Math.round((snap.bias || 0) * 100);
   const z = snap.ergTarget != null ? POWER_ZONES[powerZone(snap.ergTarget / ftp)] : null;
-  return html`<div class="helm" ...${helmPointer(c)}>
+  return html`<div class="helm" ...${useHelmPointer(c)}>
     <div class="k">ERG target</div>
     <div class="erg"><${RollNumber} value=${snap.ergTarget ?? '--'} rollKey=${snap.bias} /><span class="eu">W</span></div>
     <div class="halo"></div>
@@ -186,7 +190,7 @@ function ErgHelm({ c, snap, ftp }) {
 
 function HrHelm({ c, snap }) {
   const ap = snap.autopilot;
-  return html`<div class="helm" ...${helmPointer(c)}>
+  return html`<div class="helm" ...${useHelmPointer(c)}>
     <div class="k">Target bpm</div>
     <div class="erg"><${RollNumber} value=${ap?.targetHr ?? '--'} /></div>
     <div class="halo"></div>

@@ -33,7 +33,7 @@ function CloseBar({ c, children, onClose }) {
 
 // ---------------------------------------------------------------- plan
 
-const firstSentences = (text, n = 2) => (text || '').split(/(?<=\.)\s+/).slice(0, n).join(' ');
+const firstSentences = (text, n = 2) => ((text || '').match(/[^.]+(\.|$)/g) || []).slice(0, n).join('').trim();
 
 function RouteChoice({ s, value, onChange }) {
   const loops = s.catalog.filter((d) => d.loop);

@@ -12,8 +12,9 @@ GitHub Pages, with no backend and no subscription.
   starting in gear 8. Shifts go to the trainer's own virtual shifting over
   Zwift's protocol, the way Zwift does it; on firmware without it, CogRide
   falls back to standard FTMS and shifts in software. Road physics follow
-  Zwift's published model: CdA from height and weight, Trainer
-  Difficulty at 50 %, auto-brake and the super tuck on descents.
+  Zwift's model as the community has measured it: CdA from height and
+  weight, Trainer Difficulty at 50 %, auto-brake and the super tuck on
+  descents.
 - **Click and Click v2.** Plus is harder, minus is easier, and holding repeats.
   Hold both together to pause or resume. Connect each v2 puck on its own. If
   the left puck locks itself after a Zwift session, CogRide restarts it.

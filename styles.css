@@ -630,7 +630,7 @@ select {
   text-align: left;
   font-stretch: 100%;
   font-weight: 520;
-  font-size: 15px;
+  font-size: 16px;
 }
 .field span {
   font: 560 12px/1 var(--sans);
@@ -685,7 +685,7 @@ select {
   border: 0;
   border-radius: 14px;
   padding: 12px 14px;
-  font: 520 14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  font: 520 16px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
   color: var(--paper);
   outline: none;
   resize: vertical;
@@ -2003,7 +2003,7 @@ select {
   width: 180px;
   text-align: left;
   font-weight: 520;
-  font-size: 15px;
+  font-size: 16px;
   font-stretch: 100%;
   -webkit-appearance: none;
   appearance: none;

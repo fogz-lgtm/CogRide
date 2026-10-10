@@ -150,3 +150,19 @@ test('pausing stops the clock and recording; fuel reminders fire', () => {
   run(5);
   assert.ok(engine.samples.length > n);
 });
+
+test('fuel reminders follow the setting when it changes mid-ride', () => {
+  const { engine, events, run } = rig({ settings: { fuelEveryMin: 1 } });
+  engine.setRoute(flatLoop());
+  engine.start();
+  run(65);
+  assert.equal(events.filter(([t]) => t === 'fuel').length, 1);
+  // Off mid-ride: no storm of reminders once past the next mark.
+  engine.updateSettings({ fuelEveryMin: 0 });
+  run(70);
+  assert.equal(events.filter(([t]) => t === 'fuel').length, 1);
+  // Back on: the next reminder lands on the next whole interval.
+  engine.updateSettings({ fuelEveryMin: 2 });
+  run(130);
+  assert.equal(events.filter(([t]) => t === 'fuel').length, 2);
+});

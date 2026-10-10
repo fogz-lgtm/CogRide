@@ -80,7 +80,10 @@ export class RideEngine extends EventTarget {
   // ---------------------------------------------------------------- setup
 
   updateSettings(patch) {
+    const fuelBefore = this.settings.fuelEveryMin;
     this.settings = { ...this.settings, ...patch };
+    const f = this.settings.fuelEveryMin;
+    if (f !== fuelBefore) this.nextFuelAt = f ? (Math.floor(this.movingTime / (f * 60)) + 1) * f * 60 : Infinity;
     this.physics.configure(this.physicsOptions());
     this.trainer?.setMasses?.(this.settings.riderKg, this.settings.bikeKg);
   }
@@ -236,7 +239,7 @@ export class RideEngine extends EventTarget {
       }
       this.record(dt, power, moving, after);
       this.workoutEvents();
-      if (this.movingTime >= this.nextFuelAt) {
+      if (this.settings.fuelEveryMin && this.movingTime >= this.nextFuelAt) {
         this.emit('fuel', { minutes: Math.round(this.movingTime / 60) });
         this.nextFuelAt += this.settings.fuelEveryMin * 60;
       }
