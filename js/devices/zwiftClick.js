@@ -8,8 +8,9 @@
 // Click v2 is two separate Bluetooth devices, both named "Zwift Click": the
 // right puck (+, A/B/Y/Z) and the left puck (−, D-pad). Zwift locks the left
 // puck to its own app about a minute after another app connects (unless Zwift
-// unlocked it in the last ~24 h). So B on the right puck also shifts down,
-// and a locked left puck is reset and reconnected automatically.
+// unlocked it in the last ~24 h). So B on the right puck also shifts down.
+// A locked left puck is let go (resetting it only re-locks it a minute
+// later, round and round); the app explains how to unlock it via Zwift.
 
 import { BleDevice, writeCharacteristic, subscribe, bytesOf, UUID } from './bleDevice.js';
 import { decodeFields, firstField } from '../protobuf.js';
@@ -118,7 +119,7 @@ export function parseControllerMessage(bytes) {
 }
 
 export class ZwiftClick extends BleDevice {
-  constructor({ autoResetWhenLocked = true, showAll = false } = {}) {
+  constructor({ autoResetWhenLocked = false, showAll = false } = {}) {
     super('Click');
     this.showAll = showAll;
     this.pressed = new Set();
@@ -215,10 +216,13 @@ export class ZwiftClick extends BleDevice {
         }
         break;
       case 'locked':
+        if (this.locked) break;
         this.side = 'left';
+        this.locked = true;
         this.dispatchEvent(new CustomEvent('locked', { detail: { willReset: this.autoResetWhenLocked } }));
-        // Resetting reboots the puck; BleDevice reconnects and re-handshakes.
         if (this.autoResetWhenLocked) this.write(RESET);
+        // Otherwise stop talking to it, so it doesn't reconnect and re-lock forever.
+        else setTimeout(() => this.disconnect(), 0);
         break;
       case 'buttons':
         if (message.model) this.model = message.model;

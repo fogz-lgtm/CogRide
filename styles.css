@@ -2374,3 +2374,9 @@ select {
   color: var(--paper);
   margin: 0;
 }
+.note-card .svcs {
+  margin-top: 8px;
+  font: 520 11px/1.4 ui-monospace, Menlo, monospace;
+  color: var(--paper-3);
+  word-break: break-word;
+}

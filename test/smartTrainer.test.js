@@ -109,6 +109,7 @@ test('falls back to FTMS when the trainer ignores gears', async () => {
   await tick(50);
   assert.equal(t.path, 'ftms');
   assert.ok(warnings.some((m) => /virtual gears/.test(m)));
+  assert.equal(t.zpStatus, 'gears-ignored');
   assert.ok(k.cp.writes.some((w) => w[0] === 0x11), 'sends FTMS simulation');
   clearInterval(t.keepalive);
 });
@@ -117,6 +118,7 @@ test('FTMS-only trainer gets geared simulation and ERG', async () => {
   const k = fakeKickr({ zwift: false });
   const t = await connected(k);
   assert.equal(t.path, 'ftms');
+  assert.equal(t.zpStatus, 'no-service'); // shown in the trainer sheet
   assert.deepEqual(k.cp.writes[0], [0x00]); // request control
   await tick(10);
   const sim = k.cp.writes.find((w) => w[0] === 0x11);

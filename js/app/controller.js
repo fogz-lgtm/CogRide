@@ -322,6 +322,8 @@ export class Controller extends EventTarget {
         name: sim ? 'Simulator' : t.name,
         path: t.path,
         sim,
+        zpStatus: t.zpStatus ?? null,
+        services: t.services ?? null,
         message: t.message || '',
       });
     t.addEventListener('status', update);
@@ -346,7 +348,15 @@ export class Controller extends EventTarget {
     c.addEventListener('battery', update);
     c.addEventListener('press', (e) => this.press(e.detail.shift));
     c.addEventListener('release', (e) => this.release(e.detail.shift));
-    c.addEventListener('locked', () => this.toast({ title: 'Left Click restarting', body: 'It locked itself (Zwift does this). It’ll be back in a few seconds.' }));
+    c.addEventListener('locked', () => {
+      // Zwift locked the left puck: let it go and explain once.
+      this.clicks = this.clicks.filter((o) => o !== c);
+      this.updateClicks();
+      if (!this.lockExplained) {
+        this.lockExplained = true;
+        this.openSheet({ type: 'clicklocked' });
+      }
+    });
     c.addEventListener('warning', (e) => this.toast({ title: 'Click', body: e.detail.message, ms: 9000 }));
     this.setDevice('click', { state: 'connecting' });
     try {

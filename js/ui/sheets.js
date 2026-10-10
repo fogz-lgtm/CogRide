@@ -376,6 +376,20 @@ export function DeviceSheet({ c, s, which }) {
     return html`<${Sheet} c=${c}>
       <${CloseBar} c=${c}><h2>Trainer <em>${d.state === 'ready' ? 'ready' : d.state}</em></h2><//>
       <p class="sub">${d.sim ? 'The simulator: a pretend KICKR and rider, for trying CogRide without hardware. ↑/↓ shift, W/S changes how hard the pretend rider pushes.' : d.path === 'zwift' ? `${d.name} — using the trainer’s own virtual shifting (Zwift protocol).` : `${d.name} — standard smart-trainer control (FTMS); gears are worked out in CogRide.`}</p>
+      ${!d.sim && d.path === 'ftms' && html`<div class="note-card">
+        <b>Why not the trainer’s own virtual shifting?</b>
+        ${
+          {
+            'no-service': 'The trainer didn’t offer Zwift’s virtual-shifting service to CogRide.',
+            'no-chars': 'The trainer offered Zwift’s service, but not the parts needed to steer it.',
+            'no-handshake': 'The trainer didn’t answer Zwift’s handshake (another app may be holding it — close Zwift and the Wahoo app, then reconnect).',
+            'gears-ignored': 'The trainer accepted the handshake but kept ignoring gear changes.',
+            'forced-ftms': 'Standard control was chosen on purpose.',
+          }[d.zpStatus] ?? 'It wasn’t available on this connection.'
+        }${' '}
+        Shifting still works — CogRide turns each gear into resistance itself, so it feels the same, just a moment slower to respond.
+        ${d.services && html`<div class="svcs">Services: ${d.services.map((u) => (u.startsWith('0000') ? u.slice(4, 8) : u.slice(0, 8))).join(' · ')}</div>`}
+      </div>`}
       <div class="btnrow">
         <button class="btn sec" onClick=${() => (c.disconnectTrainer(), c.closeSheet())}>Disconnect</button>
         <button class="btn sec" onClick=${() => (c.closeSheet(), c.connectTrainer())}>${d.sim ? 'Use real trainer' : 'Reconnect'}</button>
@@ -399,6 +413,32 @@ export function DeviceSheet({ c, s, which }) {
     <div class="btnrow">
       <button class="btn sec" onClick=${() => (c.disconnectHeart(), c.closeSheet())}>Disconnect</button>
       <button class="btn sec" onClick=${() => (c.closeSheet(), c.connectHeart())}>Reconnect</button>
+    </div>
+  <//>`;
+}
+
+// Zwift locks the Click v2's left puck to its own app.
+export function ClickLockedSheet({ c, s }) {
+  const right = s.devices.click.count > 0;
+  return html`<${Sheet} c=${c}>
+    <${CloseBar} c=${c}><h2>Zwift locked <em>the left Click.</em></h2><//>
+    <p class="sub">Zwift locks the left puck (−) to its own app about a minute after another app connects. The right puck is never locked.</p>
+    <div class="note-card">
+      <b>Easiest: ride with the right puck</b>
+      Press <b class="inl">+</b> for harder and <b class="inl">B</b> (the button below +) for easier. Hold either to keep shifting.${right ? '' : ' Connect the right puck from the Click tile.'}
+    </div>
+    <div class="note-card">
+      <b>Or unlock the left puck for a day</b>
+      <ol>
+        <li>Open the Zwift app (not Companion) and pair your Click there.</li>
+        <li>Leave it connected for about 30 seconds — no ride needed.</li>
+        <li>Swipe Zwift fully closed, then connect the left puck here again.</li>
+      </ol>
+      Zwift’s unlock lasts roughly 24 hours.
+    </div>
+    <div class="btnrow">
+      <button class="btn sec" onClick=${() => (c.closeSheet(), c.connectClick())}>Connect a puck</button>
+      <button class="btn pri" onClick=${() => c.closeSheet()}>Got it</button>
     </div>
   <//>`;
 }

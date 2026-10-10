@@ -18,6 +18,9 @@ import * as ZP from './zwiftProtocol.js';
 import { FTMS_SERVICE, INDOOR_BIKE_DATA, CONTROL_POINT, OpCode, parseIndoorBikeData, parseControlPointResponse, encodeSetTargetPower, encodeSimulation } from './ftmsTrainer.js';
 import { gearedSimulation, estimatePhysicalRatio, ratioFor, gearValueFor, ZWIFT_CW, ZWIFT_CRR } from '../core/gearing.js';
 
+// Wahoo's own BLE services (KICKR family), for diagnostics only.
+const WAHOO_SERVICES = ['a026ee01', 'a026ee03', 'a026ee06', 'a026ee07', 'a026ee0b', 'a026ee0d'].map((p) => `${p}-0a7d-4ab3-97fa-f1500f9feb8b`);
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const now = () => Date.now();
 
@@ -53,8 +56,10 @@ export class SmartTrainer extends BleDevice {
 
   requestOptions() {
     return {
-      filters: [{ services: [FTMS_SERVICE] }, { services: [ZP.ZP_SERVICE] }],
-      optionalServices: [FTMS_SERVICE, ZP.ZP_SERVICE, ZP.ZP_SERVICE_16, UUID.CYCLING_POWER, UUID.DEVICE_INFO],
+      filters: [{ services: [FTMS_SERVICE] }, { services: [ZP.ZP_SERVICE] }, { services: [ZP.ZP_SERVICE_16] }],
+      // Wahoo's own services are listed only so the trainer sheet can show
+      // what this trainer offers (Web Bluetooth hides anything unlisted).
+      optionalServices: [FTMS_SERVICE, ZP.ZP_SERVICE, ZP.ZP_SERVICE_16, UUID.CYCLING_POWER, UUID.DEVICE_INFO, ...WAHOO_SERVICES],
     };
   }
 
@@ -62,11 +67,28 @@ export class SmartTrainer extends BleDevice {
     this.resetSent();
     this.path = null;
     this.echoMismatches = 0;
+    this.services = server.getPrimaryServices
+      ? await server
+          .getPrimaryServices()
+          .then((list) => list.map((s) => s.uuid))
+          .catch(() => null)
+      : null;
     this.ftms = await this.setupFtms(server).catch(() => null);
+    this.zpStatus = this.forceFtms ? 'forced-ftms' : 'no-service';
     this.zp = this.forceFtms ? null : await this.setupZwift(server).catch(() => null);
     if (this.zp) {
+      try {
+        await this.initZwift();
+        this.zpStatus = 'ok';
+      } catch (err) {
+        // No answer to the handshake: still ride, with gears worked out here.
+        this.zpStatus = 'no-handshake';
+        this.zp = null;
+        if (!this.ftms) throw err;
+      }
+    }
+    if (this.zp) {
       this.path = 'zwift';
-      await this.initZwift();
     } else if (this.ftms) {
       this.path = 'ftms';
       await this.ftmsCommand([OpCode.REQUEST_CONTROL]);
@@ -160,7 +182,10 @@ export class SmartTrainer extends BleDevice {
     const asyncChar = byUuid(ZP.ZP_ASYNC);
     const rx = byUuid(ZP.ZP_SYNC_RX);
     const tx = byUuid(ZP.ZP_SYNC_TX);
-    if (!asyncChar || !rx || !tx) return null;
+    if (!asyncChar || !rx || !tx) {
+      this.zpStatus = 'no-chars';
+      return null;
+    }
     // Subscribe to both before the handshake (the trainer answers on SYNC_TX).
     await subscribe(asyncChar, (v) => this.onZwiftFrame(bytesOf(v)));
     await subscribe(tx, (v) => this.onZwiftFrame(bytesOf(v)));
@@ -219,6 +244,7 @@ export class SmartTrainer extends BleDevice {
   async fallBackToFtms(message) {
     if (!this.ftms || this.path === 'ftms') return;
     this.path = 'ftms';
+    this.zpStatus = 'gears-ignored';
     this.resetSent();
     this.dispatchEvent(new CustomEvent('warning', { detail: { message } }));
     this.dispatchEvent(new CustomEvent('path', { detail: { path: this.path } }));

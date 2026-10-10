@@ -5,7 +5,7 @@ import { useStore } from '../app/store.js';
 import { Home } from './home.js';
 import { RideScreen, Toast } from './ride.js';
 import { Summary } from './summary.js';
-import { PlanSheet, PauseSheet, SettingsSheet, DeviceSheet, BluefySheet, EditorSheet, ClickHelpSheet } from './sheets.js';
+import { PlanSheet, PauseSheet, SettingsSheet, DeviceSheet, BluefySheet, EditorSheet, ClickHelpSheet, ClickLockedSheet } from './sheets.js';
 import { SimulatedTrainer } from '../devices/simulator.js';
 
 const UP = new Set(['ArrowUp', 'ArrowRight', '+', '=']);
@@ -63,6 +63,8 @@ function Sheets({ c, s }) {
       return html`<${BluefySheet} c=${c} />`;
     case 'clickhelp':
       return html`<${ClickHelpSheet} c=${c} />`;
+    case 'clicklocked':
+      return html`<${ClickLockedSheet} c=${c} s=${s} />`;
     case 'editor':
       return html`<${EditorSheet} c=${c} />`;
     default:

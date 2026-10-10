@@ -54,7 +54,7 @@ function fakeClickV2() {
   return { server: new FakeServer([new FakeService(ZWIFT_CUSTOM_SERVICE, [asyncChar, rx, tx, unlock])]), asyncChar, rx, tx };
 }
 
-test('Click v2 puck: handshake, press/release edges, B shifts down, lock resets', async () => {
+test('Click v2 puck: handshake, press/release edges, B shifts down, a lock lets the puck go', async () => {
   const f = fakeClickV2();
   const click = new ZwiftClick();
   const events = [];
@@ -76,9 +76,13 @@ test('Click v2 puck: handshake, press/release edges, B shifts down, lock resets'
   assert.equal(click.side, 'right');
   assert.equal(click.displayName, 'Click right (+)');
 
+  const writes = f.rx.writes.length;
   f.asyncChar.emit([0xff, 0x05, 0x00, 0xea, 0x05]);
+  f.asyncChar.emit([0xff, 0x05, 0x00, 0xea, 0x05]); // said once only
   await new Promise((r) => setTimeout(r, 5));
-  assert.deepEqual(events.at(-1), ['locked']);
-  assert.deepEqual(f.rx.writes.at(-1), [0x18]); // reset
-  click.disconnect();
+  assert.deepEqual(events.filter((e) => e[0] === 'locked'), [['locked']]);
+  // No reset (it only re-locks a minute later, forever): the puck is let go.
+  assert.ok(f.rx.writes.slice(writes).every((w) => w[0] !== 0x18));
+  assert.equal(click.state, 'disconnected');
+  assert.equal(click.userDisconnected, true);
 });
