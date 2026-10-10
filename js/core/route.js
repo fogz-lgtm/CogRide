@@ -349,6 +349,12 @@ function gaussianSmooth(values, sigmaSamples) {
 
 export function routeFromGpx(xml, { id } = {}) {
   const { name, points } = parseGpx(xml);
+  return routeFromPoints({ name, points, id });
+}
+
+// points: [{ lat, lon, ele|null }] in travel order (GPX track, Strava streams)
+export function routeFromPoints({ name, points, id, kind = 'imported', source }) {
+  if (!Array.isArray(points) || points.length < 2) throw new Error('This route has no track points');
   // Cumulative distance, dropping duplicate points.
   const pts = [{ ...points[0], d: 0 }];
   for (const p of points.slice(1)) {
@@ -391,7 +397,7 @@ export function routeFromGpx(xml, { id } = {}) {
   }
   const closes = haversine(lat[0], lon[0], lat[n - 1], lon[n - 1]) < Math.max(150, total * 0.01);
   return new Route(
-    { id: id ?? `gpx-${hashString(name + total)}`, name, kind: 'imported', description: '', loop: closes, imported: true, lengthM: total },
+    { id: id ?? `gpx-${hashString(name + total)}`, name, kind, source, description: '', loop: closes, imported: true, lengthM: total },
     { elevation, x, z, lat, lon },
   );
 }
