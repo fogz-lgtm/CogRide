@@ -1,4 +1,4 @@
-import { BleDevice } from './bleDevice.js';
+import { BleDevice, subscribe, UUID } from './bleDevice.js';
 
 export function parseHeartRate(dv) {
   const flags = dv.getUint8(0);
@@ -11,14 +11,13 @@ export class HeartRateMonitor extends BleDevice {
   }
 
   requestOptions() {
-    return { filters: [{ services: ['heart_rate'] }] };
+    // By service, not name: a Coros Pace 3's broadcast name isn't documented.
+    return { filters: [{ services: [UUID.HEART_RATE] }] };
   }
 
   async setup(server) {
-    const service = await server.getPrimaryService('heart_rate');
-    const measurement = await service.getCharacteristic('heart_rate_measurement');
-    measurement.oncharacteristicvaluechanged = (e) =>
-      this.dispatchEvent(new CustomEvent('data', { detail: { heartRate: parseHeartRate(e.target.value) } }));
-    await measurement.startNotifications();
+    const service = await server.getPrimaryService(UUID.HEART_RATE);
+    const measurement = await service.getCharacteristic(UUID.HEART_RATE_MEASUREMENT);
+    await subscribe(measurement, (v) => this.dispatchEvent(new CustomEvent('data', { detail: { heartRate: parseHeartRate(v) } })));
   }
 }

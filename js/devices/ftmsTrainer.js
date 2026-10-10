@@ -1,11 +1,11 @@
 // Bluetooth FTMS (Fitness Machine Service) smart trainer: Zwift Hub, Wahoo KICKR,
 // Tacx, Elite, Saris, JetBlack and most trainers from the last few years.
 
-import { BleDevice, writeCharacteristic } from './bleDevice.js';
+import { BleDevice, writeCharacteristic, subscribe, UUID } from './bleDevice.js';
 
-export const FTMS_SERVICE = 0x1826;
-export const INDOOR_BIKE_DATA = 0x2ad2;
-export const CONTROL_POINT = 0x2ad9;
+export const FTMS_SERVICE = UUID.FTMS;
+export const INDOOR_BIKE_DATA = UUID.INDOOR_BIKE_DATA;
+export const CONTROL_POINT = UUID.FTMS_CONTROL_POINT;
 
 export const OpCode = { REQUEST_CONTROL: 0x00, RESET: 0x01, SET_TARGET_POWER: 0x05, START: 0x07, SET_SIMULATION: 0x11, RESPONSE: 0x80 };
 
@@ -68,19 +68,16 @@ export class FtmsTrainer extends BleDevice {
   }
 
   requestOptions() {
-    return { filters: [{ services: [FTMS_SERVICE] }], optionalServices: ['device_information'] };
+    return { filters: [{ services: [FTMS_SERVICE] }], optionalServices: [UUID.DEVICE_INFO] };
   }
 
   async setup(server) {
     const service = await server.getPrimaryService(FTMS_SERVICE);
     this.controlPoint = await service.getCharacteristic(CONTROL_POINT);
-    this.controlPoint.oncharacteristicvaluechanged = (e) => this.onControlResponse(e.target.value);
-    await this.controlPoint.startNotifications();
+    await subscribe(this.controlPoint, (v) => this.onControlResponse(v));
 
     const bikeData = await service.getCharacteristic(INDOOR_BIKE_DATA);
-    bikeData.oncharacteristicvaluechanged = (e) =>
-      this.dispatchEvent(new CustomEvent('data', { detail: parseIndoorBikeData(e.target.value) }));
-    await bikeData.startNotifications();
+    await subscribe(bikeData, (v) => this.dispatchEvent(new CustomEvent('data', { detail: parseIndoorBikeData(v) })));
 
     this.lastSentPower = null;
     await this.command([OpCode.REQUEST_CONTROL]);
@@ -148,4 +145,17 @@ export class FtmsTrainer extends BleDevice {
       this.flushing = false;
     }
   }
+}
+
+// FTMS "Set Indoor Bike Simulation Parameters": wind 0.001 m/s, grade 0.01 %,
+// Crr 0.0001, Cw 0.01 kg/m.
+export function encodeSimulation({ windMps = 0, gradePct = 0, crr = 0.004, cw = 0.51 }) {
+  const out = new Uint8Array(7);
+  const view = new DataView(out.buffer);
+  view.setUint8(0, OpCode.SET_SIMULATION);
+  view.setInt16(1, Math.max(-32768, Math.min(32767, Math.round(windMps * 1000))), true);
+  view.setInt16(3, Math.max(-32768, Math.min(32767, Math.round(gradePct * 100))), true);
+  view.setUint8(5, Math.max(0, Math.min(255, Math.round(crr * 10000))));
+  view.setUint8(6, Math.max(0, Math.min(255, Math.round(cw * 100))));
+  return out;
 }

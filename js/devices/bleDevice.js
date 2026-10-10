@@ -6,12 +6,50 @@ export function bluetoothAvailable() {
   return typeof navigator !== 'undefined' && !!navigator.bluetooth;
 }
 
+// Bluefy (iPhone) only accepts full 128-bit UUID strings: short numbers or
+// names like 'heart_rate' make it reject the whole request.
+export function uuid16(short) {
+  return `0000${short.toString(16).padStart(4, '0')}-0000-1000-8000-00805f9b34fb`;
+}
+
+export const UUID = {
+  FTMS: uuid16(0x1826),
+  INDOOR_BIKE_DATA: uuid16(0x2ad2),
+  FTMS_CONTROL_POINT: uuid16(0x2ad9),
+  CYCLING_POWER: uuid16(0x1818),
+  HEART_RATE: uuid16(0x180d),
+  HEART_RATE_MEASUREMENT: uuid16(0x2a37),
+  BATTERY: uuid16(0x180f),
+  BATTERY_LEVEL: uuid16(0x2a19),
+  DEVICE_INFO: uuid16(0x180a),
+};
+
 export async function writeCharacteristic(characteristic, bytes, { preferWithoutResponse = false } = {}) {
+  // Always hand over an exact-size copy: Bluefy sends a view's whole
+  // underlying buffer, not just the view's bytes.
+  const data = Uint8Array.from(bytes);
   const props = characteristic.properties ?? {};
   const withoutResponse = preferWithoutResponse ? props.writeWithoutResponse !== false : !props.write;
-  if (withoutResponse && characteristic.writeValueWithoutResponse) return characteristic.writeValueWithoutResponse(bytes);
-  if (characteristic.writeValueWithResponse) return characteristic.writeValueWithResponse(bytes);
-  return characteristic.writeValue(bytes);
+  if (withoutResponse && characteristic.writeValueWithoutResponse) return characteristic.writeValueWithoutResponse(data);
+  if (characteristic.writeValueWithResponse) return characteristic.writeValueWithResponse(data);
+  return characteristic.writeValue(data);
+}
+
+// Subscribe to notifications/indications. Uses addEventListener (Bluefy is
+// unreliable with the on… property) and replaces any earlier handler, so a
+// reconnect never doubles up events.
+const handlers = new WeakMap();
+export async function subscribe(characteristic, handler) {
+  const previous = handlers.get(characteristic);
+  if (previous) characteristic.removeEventListener('characteristicvaluechanged', previous);
+  const listener = (event) => handler(event.target.value);
+  handlers.set(characteristic, listener);
+  characteristic.addEventListener('characteristicvaluechanged', listener);
+  await characteristic.startNotifications();
+}
+
+export function bytesOf(dataView) {
+  return new Uint8Array(dataView.buffer, dataView.byteOffset, dataView.byteLength);
 }
 
 export class BleDevice extends EventTarget {
