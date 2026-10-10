@@ -2,50 +2,164 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>World preview</title>
-<style>html,body{margin:0;height:100%;background:#111}canvas{display:block;width:100vw;height:100vh}#info{position:fixed;top:8px;left:8px;color:#fff;font:12px system-ui;background:rgba(0,0,0,.4);padding:4px 8px;border-radius:6px}</style>
+<style>
+  html, body { margin: 0; height: 100%; background: #15120F; color: #F3EBDD; font: 12px/1.35 system-ui, sans-serif; }
+  #frame { position: absolute; overflow: hidden; background: #0E0C0A; }
+  #frame.photo { border-radius: 30px; box-shadow: inset 0 0 0 1px rgba(243,235,221,.08); }
+  canvas { display: block; width: 100%; height: 100%; }
+  #info { position: fixed; left: 8px; bottom: 8px; background: rgba(14,12,10,.62); padding: 6px 9px; border-radius: 8px; white-space: pre; pointer-events: none; font: 11px/1.4 ui-monospace, Menlo, monospace; }
+  #info.hidden { display: none; }
+</style>
 </head>
 <body>
-<canvas id="c"></canvas>
+<div id="frame"><canvas id="c"></canvas></div>
 <div id="info">loading…</div>
 <script type="module">
+// Preview: ?route=alpe-dhuez&tod=dusk&at=2300&speed=6&cadence=85&power=230
+//          &w=366&h=334 (photo-frame size; default full window) &landscape=1
+//          &worker=0 &stats=0 &scale=0.75 &tucked=1 &frames=600 (stop after N frames)
+//          route=imported → a synthetic East Bay trail run (singletrack)
 import { World } from '../js/world/world.js';
 import { themeFor } from '../js/world/themes.js';
 import { loadRoute } from '../js/core/routeLibrary.js';
+import { routeFromPoints } from '../js/core/route.js';
 
 const params = new URLSearchParams(location.search);
+const num = (k, d) => (params.has(k) ? Number(params.get(k)) : d);
 const routeId = params.get('route') || 'alpe-dhuez';
-const tod = params.get('tod') || 'day';
-const startAt = Number(params.get('at') || 2000);
-const speed = Number(params.get('speed') || 6);
-const route = await loadRoute(routeId);
+const tod = params.get('tod') || 'golden';
+const startAt = num('at', 2000);
+const speed = num('speed', 6);
+const cadence = num('cadence', 85);
+const power = num('power', 220);
+const W = num('w', 0);
+const H = num('h', 0);
+
+function syntheticRun() {
+  // A Strava-style trail run in the East Bay hills: up a ridge and back down.
+  const pts = [];
+  let lat = 37.8605;
+  let lon = -122.2201;
+  let hdg = 0.6;
+  const n = 1300;
+  for (let i = 0; i < n; i++) {
+    hdg += Math.sin(i / 53) * 0.035 + Math.sin(i / 19) * 0.03;
+    lat += Math.cos(hdg) * 0.000054;
+    lon += Math.sin(hdg) * 0.000068;
+    const ele = 210 + 260 * Math.sin((i / n) * Math.PI) + 9 * Math.sin(i / 23);
+    pts.push({ lat, lon, ele });
+  }
+  return routeFromPoints({ name: 'Saturday trail run', points: pts, id: 'run-demo', kind: 'imported', source: 'strava' });
+}
+
+const route = routeId === 'imported' ? syntheticRun() : await loadRoute(routeId);
+const frame = document.getElementById('frame');
 const canvas = document.getElementById('c');
-const world = new World(canvas, { maxPixelRatio: 2 });
-world.setRoute(route, themeFor(route, tod));
-const resize = () => world.resize(innerWidth, innerHeight);
-addEventListener('resize', resize);
-resize();
+const info = document.getElementById('info');
+if (params.get('stats') === '0') info.classList.add('hidden');
+const world = new World(canvas, { maxPixelRatio: 2, useWorker: params.get('worker') !== '0', aspectMode: params.get('landscape') === '1' ? 'landscape' : 'auto' });
+window.__world = world;
+const theme = themeFor(route, tod);
+world.setRoute(route, theme);
+if (params.has('scale')) world.setRenderScale(num('scale', 1));
+
+function layout() {
+  const w = W || innerWidth;
+  const h = H || innerHeight;
+  frame.style.width = `${w}px`;
+  frame.style.height = `${h}px`;
+  frame.style.left = `${Math.max(0, (innerWidth - w) / 2)}px`;
+  frame.style.top = `${W ? 12 : 0}px`;
+  frame.classList.toggle('photo', !!W);
+  world.resize(w, h);
+}
+addEventListener('resize', layout);
+layout();
+
 let distance = startAt;
-world.display.distance = startAt;
-const s0 = route.stateAt(startAt);
 const t0 = performance.now();
-let n = 0;
-while (world.streamChunks(s0.x, s0.z, 8)) n++;
-document.getElementById('info').textContent = `${route.name} · ${tod} · ${world.chunks.size} chunks in ${Math.round(performance.now() - t0)} ms`;
+await world.prewarm((done, total) => { info.textContent = `building ${done}/${total}…`; }, { distance: startAt });
+const prewarmMs = Math.round(performance.now() - t0);
+
+const ride = { distance, speed, cadence, power, tucked: params.get('tucked') === '1', ftp: 265 };
 let last = performance.now();
 let frames = 0;
-function frame(now) {
+const stopAfter = num('frames', 0);
+const virtual = params.get('virtual') === '1';
+// Virtual time (for deterministic captures): __seek(t) simulates the ride at 30 Hz up to t seconds.
+let vt = 0;
+window.__seek = async (t) => {
+  while (vt < t) {
+    const dt = 1 / 30;
+    vt += dt;
+    distance += speed * dt;
+    ride.distance = distance;
+    world.update(ride, dt);
+  }
+  for (let k = 0; k < 600; k++) {
+    world.streamChunks(world.camera.position.x, -world.camera.position.z, 4);
+    if (!world.pending && !world.missing().length) break;
+    await new Promise((r) => setTimeout(r, 15));
+  }
+  world.resolveDisplay();
+  debugView();
+  world.render();
+};
+// Debug overview camera: &view=top|side|back (optional &vd=distance)
+const view = params.get('view');
+function debugView() {
+  if (!view) return;
+  const r = world.rider.group.position;
+  const cam = world.camera;
+  const vd = num('vd', 700);
+  const yaw = world.cam.yaw;
+  if (view === 'top') cam.position.set(r.x + Math.sin(-yaw) * -vd * 0.3, r.y + vd, r.z + Math.cos(-yaw) * vd * 0.3);
+  else if (view === 'side') cam.position.set(r.x + Math.cos(yaw) * vd, r.y + vd * 0.35, r.z - Math.sin(yaw) * vd);
+  else cam.position.set(r.x - Math.sin(-yaw) * vd, r.y + vd * 0.45, r.z + Math.cos(-yaw) * vd);
+  cam.lookAt(r.x, r.y, r.z);
+  cam.updateMatrixWorld();
+  world.sky.update(cam);
+}
+if (virtual) world.update(ride, 0);
+function loop(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
-  distance += speed * dt;
-  world.update({ distance, speed, cadence: 85, tucked: false }, dt);
+  if (!virtual) {
+    distance += speed * dt;
+    ride.distance = distance;
+    world.update(ride, dt);
+  }
+  debugView();
   world.render();
   frames++;
   window.__frames = frames;
-  requestAnimationFrame(frame);
+  if (frames % 15 === 0) {
+    const s = world.stats;
+    info.textContent = `${route.name} · ${theme.biome} · ${tod}\n` +
+      `${s.fps.toFixed(0)} fps · ${s.frameMs.toFixed(1)} ms/frame · cpu ${s.cpuMs.toFixed(1)} ms\n` +
+      `${(s.triangles / 1000).toFixed(1)}k tris · ${s.calls} calls · ${s.leaves} leaves (${s.perLevel}) · ${s.pending} pending\n` +
+      `build ${s.lastBuildMs.toFixed(0)} ms (avg ${s.avgBuildMs.toFixed(0)}) · prewarm ${prewarmMs} ms · scale ${s.renderScale} · ${distance.toFixed(0)} m`;
+  }
+  if (!stopAfter || frames < stopAfter) requestAnimationFrame(loop);
 }
-requestAnimationFrame(frame);
+requestAnimationFrame(loop);
+window.__prewarmMs = prewarmMs;
+// Perf probe: ride `seconds` in virtual time, sampling render stats every `every` s.
+window.__probe = async (seconds = 120, every = 2) => {
+  const out = { tris: [], calls: [], cpu: [] };
+  for (let t = every; t <= seconds; t += every) {
+    await window.__seek(vt + every);
+    const st = world.stats;
+    out.tris.push(st.triangles);
+    out.calls.push(st.calls);
+    out.cpu.push(st.cpuMs);
+  }
+  const max = (a) => Math.max(...a);
+  const avg = (a) => a.reduce((x, y) => x + y, 0) / a.length;
+  return { maxTris: max(out.tris), avgTris: Math.round(avg(out.tris)), maxCalls: max(out.calls), avgCalls: +avg(out.calls).toFixed(1), builds: world.stats.buildCount, avgBuildMs: +world.stats.avgBuildMs.toFixed(1), leaves: world.leaves.size };
+};
 window.__ready = true;
 </script>
 </body>

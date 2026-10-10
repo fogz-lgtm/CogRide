@@ -425,18 +425,26 @@ function Photo({ c, route, active, prefs, snap, flash, children }) {
       .then(([w, t]) => {
         if (!alive) return;
         try {
-          world.current = new w.World(canvas.current, { maxPixelRatio: 2 });
+          world.current = new w.World(canvas.current, { maxPixelRatio: 2, ftp: prefs.ftp });
+          world.current.setRunning(false);
           setMods(t);
         } catch (err) {
           setFailed(err.message);
         }
       })
       .catch((err) => alive && setFailed(err.message));
+    // The summary's picture: one fresh frame (the pause sheet has the
+    // renderer stopped, and a WebGL canvas keeps no old frame to read).
     c.capturePhoto = () => {
+      const w = world.current;
       try {
-        if (!world.current || !readyRef.current) return null;
-        world.current.render();
-        return canvas.current.toDataURL('image/jpeg', 0.82);
+        if (!w || !readyRef.current) return null;
+        const was = w.running;
+        w.setRunning(true);
+        w.render();
+        const url = canvas.current.toDataURL('image/jpeg', 0.82);
+        w.setRunning(was);
+        return url;
       } catch {
         return null;
       }
@@ -449,7 +457,8 @@ function Photo({ c, route, active, prefs, snap, flash, children }) {
     };
   }, []);
 
-  // Build the road and the first chunks in small slices so the UI stays live.
+  // Build the road and everything visible before showing it (terrain tiles
+  // are built in a worker, so the HUD stays live meanwhile).
   useEffect(() => {
     const w = world.current;
     if (!w || !route || !mods) return undefined;
@@ -457,20 +466,11 @@ function Photo({ c, route, active, prefs, snap, flash, children }) {
     let cancelled = false;
     const tod = prefs.timeOfDay === 'auto' ? mods.timeOfDayNow() : prefs.timeOfDay;
     w.setRoute(route, mods.themeFor(route, tod));
-    const at = c.live.state.snap?.distance ?? 0;
-    w.display.distance = at;
-    const s0 = route.stateAt(at);
     const r = box.current.getBoundingClientRect();
     w.resize(r.width, r.height);
-    const step = () => {
-      if (cancelled) return;
-      const t0 = performance.now();
-      let more = true;
-      while (more && performance.now() - t0 < 24) more = w.streamChunks(s0.x, s0.z, 2);
-      if (more) setTimeout(step, 0);
-      else setReady(true);
-    };
-    setTimeout(step, 30);
+    w.prewarm(null, { distance: c.live.state.snap?.distance ?? 0 })
+      .then(() => !cancelled && setReady(true))
+      .catch(() => !cancelled && setReady(true));
     return () => {
       cancelled = true;
     };
@@ -490,6 +490,7 @@ function Photo({ c, route, active, prefs, snap, flash, children }) {
 
   // Render only while the photo is on screen (not in TV mode, pause or summary).
   useEffect(() => {
+    world.current?.setRunning(!!(active && ready));
     if (!active || !ready || !world.current) return undefined;
     let raf = 0;
     let last = performance.now();
@@ -498,7 +499,7 @@ function Photo({ c, route, active, prefs, snap, flash, children }) {
       last = now;
       const s = c.live.state.snap;
       if (s && world.current) {
-        world.current.update({ distance: s.distance, speed: s.state === 'riding' ? s.speed : 0, cadence: s.cadence, tucked: s.tucked, power: s.power }, dt);
+        world.current.update({ distance: s.distance, speed: s.state === 'riding' ? s.speed : 0, cadence: s.cadence, tucked: s.tucked, power: s.power, grade: s.grade, ftp: prefs.ftp }, dt);
         world.current.render();
       }
       raf = requestAnimationFrame(frame);

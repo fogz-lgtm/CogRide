@@ -183,6 +183,7 @@ export function downsample(values, n) {
 // and ridges fading into haze. Colours follow the route's region and the hour.
 const SKIES = {
   day: ['#7f9fbe', '#c9cfcf', '#e9d8bd'],
+  golden: ['#28284a', '#b07a84', '#f6c892'],
   dusk: ['#1c2040', '#8a6380', '#edba92'],
   night: ['#0f1527', '#232b45', '#4a4762'],
 };
@@ -196,6 +197,8 @@ const LANDS = {
   lakes: ['#6c7290', '#566a74', '#4f6150', '#1f2a24'],
   mesa: ['#9b6f7c', '#b07a5e', '#a96f4d', '#4a2e22'],
 };
+LANDS.bayhills = LANDS.bayarea;
+LANDS.redwood = LANDS.redwoods;
 
 function hexMix(a, b, t) {
   const pa = parseInt(a.slice(1), 16);

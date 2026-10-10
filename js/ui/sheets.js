@@ -283,7 +283,7 @@ export function SettingsSheet({ c, s }) {
       <${Row} title="Fuel reminders"><${Seg} value=${p.fuelEveryMin} options=${[[0, 'Off'], [30, '30'], [45, '45'], [60, '60']]} onChange=${(v) => c.setPrefs({ fuelEveryMin: v })} /><//>
       <${Row} title="Sounds"><${Seg} value=${p.sound} options=${[['normal', 'Normal'], ['quiet', 'Quiet'], ['off', 'Off']]} onChange=${(v) => c.setPrefs({ sound: v })} /><//>
       <${Row} title="Cues in TV mode" sub="Mix under your show; ring switch must be on"><${Toggle} label="Cues in TV mode" on=${p.tvSound !== 'off'} onChange=${(on) => c.setPrefs({ tvSound: on ? 'on' : 'off' })} /><//>
-      <${Row} title="Light" sub="Auto follows your clock"><${Seg} value=${p.timeOfDay} options=${[['auto', 'Auto'], ['day', 'Day'], ['dusk', 'Dusk'], ['night', 'Night']]} onChange=${(v) => c.setPrefs({ timeOfDay: v })} /><//>
+      <${Row} title="Light" sub="Auto follows your clock"><${Seg} value=${p.timeOfDay} options=${[['auto', 'Auto'], ['day', 'Day'], ['golden', 'Gold'], ['dusk', 'Dusk'], ['night', 'Night']]} onChange=${(v) => c.setPrefs({ timeOfDay: v })} /><//>
       <${Row} title="Workouts ride on">
         <label class="field"><select class="wide" value=${p.workoutRouteId} onChange=${(e) => c.setPrefs({ workoutRouteId: e.target.value })}>${climbs.map((d) => html`<option value=${d.id}>${d.name}</option>`)}</select></label>
       <//>
