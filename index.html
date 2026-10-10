@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f1115">
+  <meta name="description" content="Structured indoor bike workouts with virtual shifting for Zwift Cog + Click and FTMS smart trainers.">
+  <title>CogRide</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><img src="icon.svg" alt="" width="28" height="28"><span>CogRide</span></div>
+    <nav class="devices" aria-label="Devices">
+      <button class="chip" id="chip-trainer" data-state="disconnected"><span class="dot"></span><span class="chip-label">Trainer</span></button>
+      <button class="chip" id="chip-click" data-state="disconnected"><span class="dot"></span><span class="chip-label">Click</span></button>
+      <button class="chip" id="chip-hr" data-state="disconnected"><span class="dot"></span><span class="chip-label">HR</span></button>
+    </nav>
+    <button class="icon-btn" id="open-settings" aria-label="Settings">
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M19.4 13a7.5 7.5 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.4 7.4 0 0 0-1.7-1L15 3.3h-4l-.4 2.6c-.6.3-1.2.6-1.7 1l-2.5-1-2 3.5L6.6 11a7.5 7.5 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1c.5.4 1.1.7 1.7 1l.4 2.6h4l.4-2.6c.6-.3 1.2-.6 1.7-1l2.5 1 2-3.5zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z" transform="translate(-1 0)"/></svg>
+    </button>
+  </header>
+
+  <div id="banner" class="banner" role="status" hidden></div>
+
+  <main>
+    <section class="metrics" aria-label="Live data">
+      <div class="metric metric-power"><span class="label">Power</span><span class="value" id="m-power">--</span><span class="unit">W</span></div>
+      <div class="metric"><span class="label">Target</span><span class="value" id="m-target">--</span><span class="unit">W</span></div>
+      <div class="metric"><span class="label">Cadence</span><span class="value" id="m-cadence">--</span><span class="unit">rpm</span></div>
+      <div class="metric"><span class="label">Heart rate</span><span class="value" id="m-hr">--</span><span class="unit">bpm</span></div>
+      <div class="metric"><span class="label">Speed</span><span class="value" id="m-speed">--</span><span class="unit">km/h</span></div>
+      <div class="metric"><span class="label">Distance</span><span class="value" id="m-distance">0.0</span><span class="unit">km</span></div>
+    </section>
+
+    <section class="gear-panel" aria-label="Shifting">
+      <button class="shift" id="shift-down" aria-label="Shift down / easier">−</button>
+      <div class="gear-display" id="gear-display">
+        <span class="label" id="gear-label">Gear</span>
+        <span class="value" id="gear-value">12</span>
+        <span class="sub" id="gear-sub"></span>
+      </div>
+      <button class="shift" id="shift-up" aria-label="Shift up / harder">+</button>
+    </section>
+
+    <section class="workout-panel">
+      <div class="workout-head">
+        <div>
+          <h2 id="workout-name">Free ride</h2>
+          <p class="muted" id="workout-desc">Pick a workout, or just ride and shift.</p>
+        </div>
+        <button class="btn" id="open-library">Workouts</button>
+      </div>
+      <div class="interval" id="interval" hidden>
+        <div class="interval-now">
+          <span class="label">Now</span>
+          <span class="interval-time" id="step-remaining">0:00</span>
+          <span id="step-target"></span>
+          <span class="muted" id="step-label"></span>
+        </div>
+        <div class="interval-next">
+          <span class="label">Next</span>
+          <span id="next-step">—</span>
+        </div>
+      </div>
+      <svg id="profile" class="profile" viewBox="0 0 1000 120" preserveAspectRatio="none" role="img" aria-label="Workout profile"></svg>
+      <div class="time-row"><span id="elapsed">0:00</span><span id="remaining-total"></span></div>
+    </section>
+
+    <section class="controls">
+      <div class="segmented" id="mode-toggle" role="group" aria-label="Resistance mode">
+        <button data-mode="erg" aria-pressed="true">ERG</button>
+        <button data-mode="gears" aria-pressed="false">Gears</button>
+      </div>
+      <label class="grade" id="grade-control">
+        <span>Grade</span>
+        <input type="range" id="grade" min="-5" max="15" step="0.5" value="0">
+        <output id="grade-value">0%</output>
+      </label>
+      <div class="buttons">
+        <button class="btn" id="skip" disabled>Skip</button>
+        <button class="btn primary" id="start">Start</button>
+        <button class="btn danger" id="finish" disabled>Finish</button>
+      </div>
+    </section>
+    <p class="hint muted">Shift with your Click, the on-screen buttons, or the keyboard (↑/↓ or +/−). Space starts and pauses.</p>
+  </main>
+
+  <dialog id="trainer-dialog">
+    <form method="dialog">
+      <h3>Connect a trainer</h3>
+      <p class="muted">Zwift Hub (with Cog), Wahoo KICKR, Tacx, Elite and other trainers that support Bluetooth FTMS.</p>
+      <div class="stack">
+        <button class="btn primary" value="ble">Pair Bluetooth trainer</button>
+        <button class="btn" value="sim">Use simulator (no hardware)</button>
+        <button class="btn ghost" value="cancel">Cancel</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="library-dialog" class="wide">
+    <div class="dialog-head">
+      <h3>Workouts</h3>
+      <button class="icon-btn" data-close aria-label="Close">✕</button>
+    </div>
+    <div id="workout-list" class="workout-list"></div>
+    <div class="library-actions">
+      <button class="btn" id="new-workout">New workout</button>
+      <label class="btn">Import .zwo<input type="file" id="import-zwo" accept=".zwo,.xml" hidden multiple></label>
+      <button class="btn ghost" id="clear-workout">Free ride (no workout)</button>
+    </div>
+    <form id="editor" class="editor" hidden>
+      <label>Name <input id="editor-name" required maxlength="60"></label>
+      <label>Steps
+        <textarea id="editor-text" rows="7" spellcheck="false" placeholder="10m 45-75% Warm up&#10;4x 4m 105% Threshold, 2m 55%&#10;5m free&#10;5m 60-40% Cool down"></textarea>
+      </label>
+      <p class="muted small">One block per line: <code>duration intensity label</code>. Intensity is % of FTP (<code>88%</code>), a ramp (<code>50-75%</code>) or <code>free</code>. Repeat with <code>4x</code> and comma-separated blocks.</p>
+      <p class="error" id="editor-error" hidden></p>
+      <svg id="editor-preview" class="profile small-profile" viewBox="0 0 1000 120" preserveAspectRatio="none"></svg>
+      <div class="buttons">
+        <button type="button" class="btn ghost" id="editor-cancel">Cancel</button>
+        <button type="submit" class="btn primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="settings-dialog">
+    <form id="settings-form" method="dialog">
+      <h3>Settings</h3>
+      <label>FTP (W) <input type="number" name="ftp" min="50" max="600" required></label>
+      <label>Rider weight (kg) <input type="number" name="riderKg" min="30" max="200" step="0.1" required></label>
+      <label>Bike weight (kg) <input type="number" name="bikeKg" min="4" max="30" step="0.1" required></label>
+      <label>ERG shift step (% FTP per click) <input type="number" name="ergShiftStepPct" min="1" max="10" step="1" required></label>
+      <p class="muted small">Weights set how hard climbing feels in Gears mode. In ERG mode the Click nudges the workout target up or down.</p>
+      <div class="buttons">
+        <button class="btn ghost" value="cancel" formnovalidate>Cancel</button>
+        <button class="btn primary" value="save">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="summary-dialog">
+    <h3>Ride complete</h3>
+    <dl class="summary" id="summary"></dl>
+    <p class="muted small">Download the TCX and upload it to Strava, TrainingPeaks, intervals.icu or Garmin Connect.</p>
+    <div class="buttons">
+      <button class="btn ghost" id="discard-ride">Discard</button>
+      <button class="btn primary" id="download-tcx">Download TCX</button>
+    </div>
+  </dialog>
+</body>
+</html>

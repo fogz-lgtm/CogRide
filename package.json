@@ -1,0 +1,11 @@
+{
+  "name": "cogride",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Structured indoor workouts with virtual shifting for Zwift Cog + Click and FTMS smart trainers",
+  "type": "module",
+  "scripts": {
+    "start": "node scripts/serve.js",
+    "test": "node --test test/*.test.js"
+  }
+}

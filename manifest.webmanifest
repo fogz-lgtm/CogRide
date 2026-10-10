@@ -1,0 +1,10 @@
+{
+  "name": "CogRide",
+  "short_name": "CogRide",
+  "description": "Structured indoor workouts with virtual shifting for Zwift Cog + Click",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#0f1115",
+  "theme_color": "#0f1115",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}
