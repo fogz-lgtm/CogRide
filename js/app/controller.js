@@ -162,6 +162,7 @@ export class Controller extends EventTarget {
       this.checkRecent();
       strava
         .flushUploadQueue()
+        .then((done) => this.afterFlush(done))
         .catch(() => {})
         .finally(() => this.set({ strava: this.stravaState() }));
     }
@@ -218,10 +219,18 @@ export class Controller extends EventTarget {
     }
   }
 
+  // Rides that reached Strava from the queue: remember their activity ids.
+  afterFlush(done = []) {
+    for (const d of done) if (d.externalId && d.activityId) history.updateHistory(d.externalId, { stravaId: d.activityId });
+    this.set({ strava: this.stravaState() });
+  }
+
   // Rides saved here but not (yet) on Strava still count toward the week.
+  // (Matched by Strava id, or by start time for uploads we never heard back from.)
   weekWithLocal(week) {
     const since = weekStart();
-    const local = history.loadHistory().filter((e) => e.at >= since && (!week || !e.stravaId));
+    const onStrava = (e) => e.stravaId || (this.activities || []).some((a) => Math.abs(a.start - e.at) < 3 * 60000);
+    const local = history.loadHistory().filter((e) => e.at >= since && (!week || !onStrava(e)));
     const base = week ?? { since, runDistanceM: 0, runElevM: 0, rideS: 0, rideElevM: 0, elevM: 0, lifts: 0, count: 0, localOnly: true };
     const rideS = local.reduce((s, e) => s + (e.minutes || 0) * 60, 0);
     const climb = local.reduce((s, e) => s + (e.climbedM || 0), 0);
@@ -511,6 +520,8 @@ export class Controller extends EventTarget {
     });
     on('lap', (d) => {
       this.laps = d.lap;
+      // The lap's time (just announced by the attempt) matters more than "Lap N".
+      if (performance.now() - (this.lastAttemptAt ?? -Infinity) < 4000) return;
       this.toast({ title: `Lap ${d.lap + 1}`, body: this.state.route?.name ?? '', ms: 4000 });
     });
     on('fuel', (d) => {
@@ -559,6 +570,7 @@ export class Controller extends EventTarget {
     this.drift = { out: 0, lastBell: -Infinity };
     this.attempt = null;
     this.attemptLog = [];
+    this.pendingBest = null;
     this.goalDone = false;
     this.awayAt = null;
     if (this.trainer instanceof SimulatedTrainer) this.trainer.setEffort(Math.round(prefs.ftp * 0.72));
@@ -645,6 +657,8 @@ export class Controller extends EventTarget {
     const photo = this.capturePhoto?.() ?? null;
     const ride = this.engine.finish();
     const workoutDone = this.engine.workoutDone;
+    if (this.pendingBest && ride.samples.length >= 60) history.saveBest(this.pendingBest.routeId, this.pendingBest.best);
+    this.pendingBest = null;
     this.idleEngine();
     this.releaseWakeLock();
     if (ride.samples.length < 60) {
@@ -694,8 +708,10 @@ export class Controller extends EventTarget {
     }
     const hrZones = [0, 0, 0, 0, 0];
     for (const s of hrs) hrZones[hrZoneIndex(s.heartRate, prefs.hrZones) ?? 0]++;
-    const newBest = attempts.find((a) => a.isBest && a.prevTimeS != null) ?? null;
-    const headline = rideHeadline({ plan, route, minutes, summited, laps, zoneShare, rampFtp, liftedBefore, workoutDone, distanceM: summary.distanceM, units: prefs.units, newBest: !!newBest, goal });
+    const prevBefore = attempts[0]?.prevTimeS ?? null;
+    const fastest = attempts.length ? Math.min(...attempts.map((a) => a.timeS)) : null;
+    const newBest = prevBefore != null && fastest < prevBefore;
+    const headline = rideHeadline({ plan, route, minutes, summited, laps, zoneShare, rampFtp, liftedBefore, workoutDone, distanceM: summary.distanceM, units: prefs.units, newBest, goal });
     // Zone 2 fitness check: on autopilot rides and other steady, mostly-Z2 rides.
     const steady = plan?.kind === 'autopilot' || (!plan?.workout && zoneShare >= 0.6 && (powerVariability(samples) ?? 1) < 0.2);
     const aerobic = steady ? aerobicCheck(samples) : null;
@@ -782,6 +798,7 @@ export class Controller extends EventTarget {
     if (strava.canUpload()) {
       strava
         .flushUploadQueue()
+        .then((done) => this.afterFlush(done))
         .catch(() => {})
         .finally(() => this.set({ strava: this.stravaState() }));
     }
@@ -934,8 +951,10 @@ export class Controller extends EventTarget {
     const name = route?.name?.replace(/\s*\(.*\)$/, '') ?? 'this road';
     const prevTimeS = ev.best?.timeS ?? null;
     this.attemptLog.push({ timeS: ev.timeS, isBest: ev.isBest, prevTimeS });
+    this.lastAttemptAt = performance.now();
     if (ev.isBest) {
-      history.saveBest(route.id, { timeS: ev.timeS, splits: ev.splits, at: Date.now() });
+      // Kept until the ride is saved — a discarded ride sets no best.
+      this.pendingBest = { routeId: route.id, best: { timeS: ev.timeS, splits: ev.splits, lengthM: ev.lengthM, at: Date.now() } };
       sound.playChime();
       if (prevTimeS != null) this.toast({ title: `New best: ${mmss(ev.timeS)}`, body: `${name}, ${mmss(prevTimeS - ev.timeS)} faster than before.`, ms: 9000 });
       else this.toast({ title: `${name}: ${mmss(ev.timeS)}`, body: 'Your first time here. Next time you’ll race this ride.', ms: 9000 });
@@ -1038,7 +1057,12 @@ export class Controller extends EventTarget {
   async rideSegment(idOrLink, name = '') {
     const id = strava.parseSegmentId(idOrLink);
     if (!id) {
-      this.toast({ title: 'That’s not a segment link', body: 'Paste a link like strava.com/segments/229781.' });
+      const effort = /activities\/\d+\/segments/.test(String(idOrLink));
+      this.toast({
+        title: effort ? 'That’s one effort, not the segment' : 'That’s not a segment link',
+        body: effort ? 'Open the segment itself (tap its name on Strava) and copy that link.' : 'Paste a link like strava.com/segments/229781.',
+        ms: 8000,
+      });
       return;
     }
     if (!strava.isConnected()) {

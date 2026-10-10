@@ -51,8 +51,8 @@ GitHub Pages, with no backend and no subscription.
 - **Best power** over 5 s, 1, 5 and 20 min, this ride and all time.
 - **Any Strava segment.** Ride your starred segments, or paste any segment
   link, on its real road and gradient.
-- **Gears and difficulty your way.** Zwift's gears or a 20 % easier climbing
-  set; trainer difficulty per road.
+- **Gears and difficulty your way.** Zwift's gears, or a climbing set with
+  closer, easier steps; trainer difficulty per road.
 - **Doesn't lose rides.** The ride is checkpointed every 30 s; if the page
   reloads mid-ride, Home offers to save it. Every ride exports as `.fit`.
 

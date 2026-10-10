@@ -7,11 +7,12 @@ export const GEAR_COUNT = 24;
 export const START_GEAR = 8; // Zwift starts virtual shifting in gear 8 (1.68)
 
 // Gear tables as the trainer receives them (ratio × 10000). 'zwift' is
-// Zwift's own; 'climbing' is the same spread shifted 20 % easier, for long
-// steep climbs at modest power.
+// Zwift's own; 'climbing' keeps Zwift's easiest gear (0.75) but spreads 24
+// gears evenly up to 4.2 only — closer, easier steps for long climbs, all
+// inside the range Zwift itself sends trainers.
 export const GEAR_TABLES = {
   zwift: ZWIFT_GEAR_VALUES,
-  climbing: ZWIFT_GEAR_VALUES.map((v) => Math.round(v * 0.8)),
+  climbing: Array.from({ length: 24 }, (_, i) => Math.round(7500 * Math.pow(42000 / 7500, i / 23))),
 };
 let table = 'zwift';
 const ratios = (name) => GEAR_TABLES[name].map((v) => Math.round(v / 100) / 100);

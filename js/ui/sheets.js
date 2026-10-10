@@ -317,7 +317,7 @@ export function SettingsSheet({ c, s }) {
       <${Row} title="Trainer difficulty" sub="How much of the road’s slope you feel. Zwift’s default is 50 %.">
         <${Seg} value=${p.difficulty} options=${[[0.25, '25'], [0.5, '50'], [0.75, '75'], [1, '100']]} onChange=${(v) => c.setPrefs({ difficulty: v })} />
       <//>
-      <${Row} title="Gears" sub=${p.gearTable === 'climbing' ? 'Every gear 20 % easier — for long, steep climbs' : 'Zwift’s 24 gears'}>
+      <${Row} title="Gears" sub=${p.gearTable === 'climbing' ? 'Closer, easier steps for long climbs (top gear 4.2)' : 'Zwift’s 24 gears'}>
         <${Seg} value=${p.gearTable || 'zwift'} options=${[['zwift', 'Zwift'], ['climbing', 'Climbing']]} onChange=${(v) => c.setPrefs({ gearTable: v })} />
       <//>
       <${Row} title="ERG Click step" sub="Each Click nudges the target"><${Seg} value=${p.ergStepPct} options=${[[0.01, '1 %'], [0.02, '2 %']]} onChange=${(v) => c.setPrefs({ ergStepPct: v })} /><//>

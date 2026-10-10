@@ -199,6 +199,8 @@ export async function fetchRecentActivities({ afterS, perPage = 15 } = {}, opts)
 // "https://www.strava.com/segments/229781", "strava.com/segments/229781?x" or "229781".
 export function parseSegmentId(text) {
   const s = String(text || '').trim();
+  // strava.com/activities/123/segments/456 is one effort on an activity, not the segment.
+  if (/activities\/\d+\/segments/.test(s)) return null;
   const m = s.match(/segments\/(\d+)/) || s.match(/^(\d{3,})$/);
   return m ? m[1] : null;
 }

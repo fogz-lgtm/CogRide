@@ -6,29 +6,40 @@ import { bestAverage } from './rampTest.js';
 
 export const SPLIT_M = 50;
 
-// Elapsed seconds at distance d along a best attempt (splits[k] = time at k·50 m).
-export function timeAt(splits, d) {
+// splits[k] = elapsed seconds at k·50 m; the last entry is the finish, at
+// the road's full length (which is rarely a multiple of 50 m).
+const posAt = (i, n, lengthM) => (i === n - 1 && lengthM ? lengthM : i * SPLIT_M);
+
+// Elapsed seconds at distance d along a best attempt.
+export function timeAt(splits, d, lengthM = null) {
   if (!splits?.length) return null;
-  const f = Math.max(0, d) / SPLIT_M;
-  const i = Math.floor(f);
-  if (i >= splits.length - 1) return splits.at(-1);
-  return splits[i] + (splits[i + 1] - splits[i]) * (f - i);
+  const n = splits.length;
+  const end = posAt(n - 1, n, lengthM);
+  const x = Math.max(0, Math.min(d, end));
+  const i = Math.min(n - 2, Math.floor(x / SPLIT_M));
+  if (i < 0) return splits[0];
+  const a = posAt(i, n, lengthM);
+  const b = posAt(i + 1, n, lengthM);
+  return splits[i] + (splits[i + 1] - splits[i]) * ((x - a) / Math.max(1e-6, b - a));
 }
 
 // Distance reached at elapsed time t on a best attempt (inverse of timeAt).
-export function distanceAt(splits, t) {
+export function distanceAt(splits, t, lengthM = null) {
   if (!splits?.length) return null;
+  const n = splits.length;
   if (t <= 0) return 0;
-  if (t >= splits.at(-1)) return (splits.length - 1) * SPLIT_M;
+  if (t >= splits.at(-1)) return posAt(n - 1, n, lengthM);
   let lo = 0;
-  let hi = splits.length - 1;
+  let hi = n - 1;
   while (hi - lo > 1) {
     const mid = (lo + hi) >> 1;
     if (splits[mid] <= t) lo = mid;
     else hi = mid;
   }
   const span = splits[hi] - splits[lo] || 1;
-  return (lo + (t - splits[lo]) / span) * SPLIT_M;
+  const a = posAt(lo, n, lengthM);
+  const b = posAt(hi, n, lengthM);
+  return a + ((t - splits[lo]) / span) * (b - a);
 }
 
 // One attempt per pass: up a climb (until the summit) or once round a loop.
@@ -60,9 +71,11 @@ export class AttemptTracker {
         const reached = !forward ? true : rs.d >= this.length - 1;
         if (reached) {
           const timeS = Math.round((t - cur.start) * 10) / 10;
-          if (cur.splits.length < Math.floor(this.length / SPLIT_M) + 1) cur.splits.push(timeS);
-          event = { kind: 'finish', timeS, splits: cur.splits, best: this.best, isBest: !this.best || timeS < this.best.timeS };
-          if (event.isBest) this.best = { timeS, splits: cur.splits };
+          // The finish is always the last entry, at the full length.
+          if ((cur.splits.length - 1) * SPLIT_M < this.length - 0.5) cur.splits.push(timeS);
+          else cur.splits[cur.splits.length - 1] = timeS;
+          event = { kind: 'finish', timeS, splits: cur.splits, lengthM: this.length, best: this.best, isBest: !this.best || timeS < this.best.timeS };
+          if (event.isBest) this.best = { timeS, splits: cur.splits, lengthM: this.length };
         }
         this.current = null;
       }
@@ -80,7 +93,7 @@ export class AttemptTracker {
   delta(rs, t) {
     const cur = this.current;
     if (!cur || !this.best || rs?.lap !== cur.lap || rs.direction < 0) return null;
-    const bestT = timeAt(this.best.splits, rs.d);
+    const bestT = timeAt(this.best.splits, rs.d, this.best.lengthM);
     return bestT == null ? null : bestT - (t - cur.start);
   }
 
@@ -88,7 +101,7 @@ export class AttemptTracker {
   ghostTotal(t) {
     const cur = this.current;
     if (!cur || !this.best) return null;
-    const d = distanceAt(this.best.splits, t - cur.start);
+    const d = distanceAt(this.best.splits, t - cur.start, this.best.lengthM);
     if (d == null) return null;
     return cur.lap * this.lapLength + Math.min(this.length, d);
   }

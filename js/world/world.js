@@ -1231,7 +1231,11 @@ export class World {
     g.group.visible = true;
     g.group.position.set(s.x + fz * lane, s.elevation + 0.05, -(s.z - fx * lane));
     g.group.rotation.set(Math.atan(s.grade / 100), -s.heading, 0);
-    g.update(dt, ra);
+    // The ghost has no tail light, whatever the hour.
+    const ga = (this._ghostArgs ??= {});
+    Object.assign(ga, ra);
+    ga.blink = false;
+    g.update(dt, ga);
   }
 
   updateCamera(dt, s, px, py, pz, speed) {

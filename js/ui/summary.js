@@ -47,14 +47,17 @@ function StravaRow({ c, s, up }) {
 function Attempts({ r }) {
   const list = r.attempts || [];
   if (!list.length) return null;
-  const top = list.find((a) => a.isBest) ?? list.reduce((a, b) => (b.timeS < a.timeS ? b : a));
+  // Your fastest today, against the best you had before this ride.
+  const fastest = Math.min(...list.map((a) => a.timeS));
+  const before = list[0].prevTimeS;
   const name = (r.routeName || 'this road').replace(/\s*\(.*\)$/, '');
+  const isNew = before != null && fastest < before;
   let body;
-  if (top.isBest && top.prevTimeS != null) body = `${clock(top.prevTimeS - top.timeS)} faster than your old best of ${clock(top.prevTimeS)}.`;
-  else if (top.isBest) body = 'Your first time here — next time, its ghost rides with you.';
-  else body = `${clock(top.timeS - top.prevTimeS)} off your best of ${clock(top.prevTimeS)}.`;
+  if (before == null) body = 'Your first time here — next time, its ghost rides with you.';
+  else if (isNew) body = `${clock(before - fastest)} faster than your old best of ${clock(before)}.`;
+  else body = `${clock(fastest - before)} off your best of ${clock(before)}.`;
   return html`<div class="note-card racecard">
-    <b>${top.isBest && top.prevTimeS != null ? 'New best' : 'Your time'} · ${name} · ${clock(top.timeS)}</b>
+    <b>${isNew ? 'New best' : list.length > 1 ? 'Fastest today' : 'Your time'} · ${name} · ${clock(fastest)}</b>
     ${body}${list.length > 1 ? ` ${list.length} times up today.` : ''}
   </div>`;
 }

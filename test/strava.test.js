@@ -159,6 +159,8 @@ test('segment links and ids parse', () => {
   assert.equal(S.parseSegmentId('strava.com/segments/229781?filter=overall'), '229781');
   assert.equal(S.parseSegmentId(' 229781 '), '229781');
   assert.equal(S.parseSegmentId('https://www.strava.com/activities/5'), null);
+  // An effort on an activity is not the segment.
+  assert.equal(S.parseSegmentId('https://www.strava.com/activities/123/segments/3344556677'), null);
 });
 
 test('segment track becomes points with elevation', async () => {

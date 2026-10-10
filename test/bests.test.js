@@ -104,3 +104,18 @@ test('power variability tells steady rides from climbs with descents', async () 
   assert.ok(powerVariability(steady) < 0.1);
   assert.ok(powerVariability(climbDescent) > 0.3);
 });
+
+test('roads that are not a multiple of 50 m: the finish is the last split', () => {
+  const odd = buildRoute({ id: 'odd', name: 'Odd', resolutionM: 470, startElevationM: 100, gradientsPct: [6, 6, 6] }); // 1410 m
+  const first = new AttemptTracker(odd);
+  ride(odd, first, 5, 400);
+  const b = first.best;
+  assert.equal(b.lengthM, odd.length);
+  assert.equal(b.splits.at(-1), b.timeS);
+  // Same pace again: level all the way to the top, ghost all the way up.
+  const tr = new AttemptTracker(odd, b);
+  const t = Math.floor((odd.length - 5) / 5);
+  for (let i = 0; i <= t; i++) tr.update(odd.stateAt(5 * i), i);
+  assert.ok(Math.abs(tr.delta(odd.stateAt(5 * t), t)) < 1.5, `delta ${tr.delta(odd.stateAt(5 * t), t)}`);
+  assert.ok(odd.length - tr.ghostTotal(t) < 8, `ghost ${tr.ghostTotal(t)} of ${odd.length}`);
+});

@@ -31,7 +31,9 @@ export async function runDemo(c, params) {
     const def = c.state.catalog.find((d) => d.id === (id || 'alpe-dhuez'));
     const timeS = Number(params.get('best'));
     const n = Math.floor(def.lengthM / SPLIT_M) + 1;
-    saveBest(def.id, { timeS, splits: Array.from({ length: n }, (_, k) => Math.round(((k * SPLIT_M) / def.lengthM) * timeS * 10) / 10), at: Date.now() - 9 * 86400000 });
+    const splits = Array.from({ length: n }, (_, k) => Math.round(((k * SPLIT_M) / def.lengthM) * timeS * 10) / 10);
+    if ((n - 1) * SPLIT_M < def.lengthM) splits.push(timeS);
+    saveBest(def.id, { timeS, splits, lengthM: def.lengthM, at: Date.now() - 9 * 86400000 });
   }
   let plan;
   if (kind === 'vert') plan = vertPlan(Number(params.get('goal') || 914.4), id || 'mount-diablo-south-gate');
