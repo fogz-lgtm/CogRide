@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>World preview</title>
+<style>html,body{margin:0;height:100%;background:#111}canvas{display:block;width:100vw;height:100vh}#info{position:fixed;top:8px;left:8px;color:#fff;font:12px system-ui;background:rgba(0,0,0,.4);padding:4px 8px;border-radius:6px}</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="info">loading…</div>
+<script type="module">
+import { World } from '../js/world/world.js';
+import { themeFor } from '../js/world/themes.js';
+import { loadRoute } from '../js/core/routeLibrary.js';
+
+const params = new URLSearchParams(location.search);
+const routeId = params.get('route') || 'alpe-dhuez';
+const tod = params.get('tod') || 'day';
+const startAt = Number(params.get('at') || 2000);
+const speed = Number(params.get('speed') || 6);
+const route = await loadRoute(routeId);
+const canvas = document.getElementById('c');
+const world = new World(canvas, { maxPixelRatio: 2 });
+world.setRoute(route, themeFor(route, tod));
+const resize = () => world.resize(innerWidth, innerHeight);
+addEventListener('resize', resize);
+resize();
+let distance = startAt;
+world.display.distance = startAt;
+const s0 = route.stateAt(startAt);
+const t0 = performance.now();
+let n = 0;
+while (world.streamChunks(s0.x, s0.z, 8)) n++;
+document.getElementById('info').textContent = `${route.name} · ${tod} · ${world.chunks.size} chunks in ${Math.round(performance.now() - t0)} ms`;
+let last = performance.now();
+let frames = 0;
+function frame(now) {
+  const dt = Math.min(0.1, (now - last) / 1000);
+  last = now;
+  distance += speed * dt;
+  world.update({ distance, speed, cadence: 85, tucked: false }, dt);
+  world.render();
+  frames++;
+  window.__frames = frames;
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+window.__ready = true;
+</script>
+</body>
+</html>

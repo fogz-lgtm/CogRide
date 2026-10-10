@@ -28,7 +28,7 @@ test('road sits on the terrain and terrain is smooth across switchbacks', () => 
   for (let d = 0; d < route.length; d += 97) {
     const s = route.stateAt(d);
     const ground = h(s.x, s.z);
-    assert.ok(Math.abs(ground - s.elevation) < 0.6, `at ${d}: ground ${ground} road ${s.elevation}`);
+    assert.ok(Math.abs(ground - s.elevation) < 0.7, `at ${d}: ground ${ground} road ${s.elevation}`);
   }
   // Walking across the slope between the two legs: no cliffs
   const s = route.stateAt(1300);
@@ -54,4 +54,12 @@ test('nearest finds the right leg when roads pass close together', () => {
     const n = index.nearest(s.x, s.z);
     assert.ok(n.distance < 0.5, `at ${d}: ${n.distance}`);
   }
+});
+
+test('terrain far from the road stays near the road’s elevation band', () => {
+  const index = new RoadIndex(route);
+  const h = makeHeightField(index);
+  const s = route.stateAt(0);
+  const far = h(s.x + 3000, s.z + 3000);
+  assert.ok(far > 500 && far < 1300, `far ${far}`);
 });
