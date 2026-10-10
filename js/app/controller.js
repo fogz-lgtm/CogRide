@@ -328,9 +328,10 @@ export class Controller extends EventTarget {
     this.setDevice('trainer', { ...OFF });
   }
 
-  async connectClick() {
+  // showAll: list every Bluetooth device (for when the Click doesn't show up).
+  async connectClick({ showAll = false } = {}) {
     if (!bluetoothAvailable()) return this.openSheet({ type: 'bluefy' });
-    const c = new ZwiftClick();
+    const c = new ZwiftClick({ showAll });
     const update = () => this.updateClicks();
     c.addEventListener('status', update);
     c.addEventListener('battery', update);
@@ -349,6 +350,8 @@ export class Controller extends EventTarget {
     } catch (err) {
       const msg = this.explainBleError(err);
       if (msg) this.toast({ title: 'Click didn’t connect', body: msg });
+      // Nothing picked (or nothing found): help find it.
+      else if (!this.clicks.some((o) => o.connected)) this.openSheet({ type: 'clickhelp' });
     }
     update();
   }

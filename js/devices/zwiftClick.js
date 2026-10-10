@@ -118,8 +118,9 @@ export function parseControllerMessage(bytes) {
 }
 
 export class ZwiftClick extends BleDevice {
-  constructor({ autoResetWhenLocked = true } = {}) {
+  constructor({ autoResetWhenLocked = true, showAll = false } = {}) {
     super('Click');
+    this.showAll = showAll;
     this.pressed = new Set();
     this.battery = null;
     this.side = null; // 'left' | 'right' once known
@@ -135,10 +136,14 @@ export class ZwiftClick extends BleDevice {
   }
 
   requestOptions() {
-    // The 128-bit service filter is what Bluefy handles most reliably.
+    const optionalServices = [ZWIFT_CUSTOM_SERVICE, ZWIFT_FC82_SERVICE, UUID.BATTERY, UUID.DEVICE_INFO];
+    // Fallback: list every nearby device and let him pick "Zwift Click".
+    if (this.showAll) return { acceptAllDevices: true, optionalServices };
+    // Pucks advertise Zwift's 128-bit service, some firmware its 16-bit FC82,
+    // and Bluefy's name filters are hit and miss — so offer all three.
     return {
-      filters: [{ services: [ZWIFT_CUSTOM_SERVICE] }, { namePrefix: 'Zwift Click' }, { namePrefix: 'Zwift Play' }],
-      optionalServices: [ZWIFT_CUSTOM_SERVICE, ZWIFT_FC82_SERVICE, UUID.BATTERY, UUID.DEVICE_INFO],
+      filters: [{ services: [ZWIFT_CUSTOM_SERVICE] }, { services: [ZWIFT_FC82_SERVICE] }, { namePrefix: 'Zwift' }],
+      optionalServices,
     };
   }
 

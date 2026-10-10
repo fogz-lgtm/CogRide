@@ -390,6 +390,7 @@ export function DeviceSheet({ c, s, which }) {
         <button class="btn sec" onClick=${() => (c.closeSheet(), c.connectClick())}>Add a puck</button>
         <button class="btn sec" onClick=${() => (c.disconnectClicks(), c.closeSheet())}>Disconnect</button>
       </div>
+      <button class="btn ghost small" onClick=${() => c.openSheet({ type: 'clickhelp' })}>Can’t find a puck?</button>
     <//>`;
   }
   return html`<${Sheet} c=${c}>
@@ -399,6 +400,25 @@ export function DeviceSheet({ c, s, which }) {
       <button class="btn sec" onClick=${() => (c.disconnectHeart(), c.closeSheet())}>Disconnect</button>
       <button class="btn sec" onClick=${() => (c.closeSheet(), c.connectHeart())}>Reconnect</button>
     </div>
+  <//>`;
+}
+
+// When the Click doesn't show up in the Bluetooth list.
+export function ClickHelpSheet({ c }) {
+  return html`<${Sheet} c=${c}>
+    <${CloseBar} c=${c}><h2>Can’t see <em>your Click?</em></h2><//>
+    <div class="note-card">
+      <ol>
+        <li><b class="inl">Wake it.</b> Press a button on the puck — its light blinks. Pucks fall asleep after a minute or so.</li>
+        <li><b class="inl">Free it.</b> A Click talking to Zwift stays hidden. Swipe Zwift and Zwift Companion closed (and quit Zwift on any iPad, Apple TV or computer nearby).</li>
+        <li><b class="inl">One at a time.</b> A Click v2 is two pucks, both called “Zwift Click”. Connect one, then tap the Click tile again for the other.</li>
+      </ol>
+    </div>
+    <div class="btnrow">
+      <button class="btn sec" onClick=${() => (c.closeSheet(), c.connectClick())}>Search again</button>
+      <button class="btn pri" onClick=${() => (c.closeSheet(), c.connectClick({ showAll: true }))}>Show every device</button>
+    </div>
+    <p class="sub small">“Show every device” lists everything nearby — pick “Zwift Click”. Still nothing? Check Settings › Bluefy › Bluetooth is on.</p>
   <//>`;
 }
 

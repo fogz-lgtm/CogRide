@@ -2366,3 +2366,11 @@ select {
   color: var(--paper-3);
   min-height: 14px;
 }
+.note-card b.inl {
+  display: inline;
+  font: inherit;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--paper);
+  margin: 0;
+}
