@@ -16,7 +16,7 @@ export function soundEnabled() {
 export function unlockAudio() {
   try {
     // 'ambient' mixes with other audio instead of taking over the audio
-    // session, so a shift click never pauses Netflix playing in PiP.
+    // session, so a shift click never pauses a show playing in Picture in Picture.
     if (navigator.audioSession) navigator.audioSession.type = 'ambient';
     if (!ctx) {
       const AC = window.AudioContext || window.webkitAudioContext;
