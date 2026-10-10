@@ -31,16 +31,24 @@ function share(result) {
 }
 
 function StravaRow({ c, s, up }) {
+  const st = s.strava;
   if (up.status === 'ok') {
     const at = new Date(up.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
     return html`<div class="strava"><span class="disc ok">${Icon.check()}</span><div><b>${up.duplicate ? 'Already on Strava' : 'Uploaded to Strava'}</b><span>${at} · <a href=${activityUrl(up.activityId)} target="_blank" rel="noopener">View activity →</a></span></div></div>`;
   }
   if (up.status === 'busy') return html`<div class="strava"><span class="disc busy"></span><div><b>Sending to Strava…</b><span>As a virtual ride, marked trainer</span></div></div>`;
+  // Strava refused the sign-in (or upload permission): retrying can't fix that.
+  if ((up.status === 'err' && up.auth) || (st.connected && (st.needsReconnect || !st.canUpload))) {
+    return html`<div class="strava"><span class="disc err">!</span><div><b>Strava needs you to sign in again</b><span>The ride is saved on this phone and goes up once you do</span></div><button class="btn pri" onClick=${() => c.reconnectStrava()}>Reconnect</button></div>`;
+  }
   if (up.status === 'err') {
     return html`<div class="strava"><span class="disc err">!</span><div><b>Couldn’t reach Strava</b><span>Saved on this phone · we’ll keep trying</span></div><button class="btn pri" onClick=${() => c.upload()}>Retry</button></div>`;
   }
-  if (up.status === 'idle') return html`<div class="strava"><span class="disc off"></span><div><b>Not uploaded</b><span>Auto-upload is off</span></div><button class="btn pri" onClick=${() => c.upload()}>Upload</button></div>`;
-  return html`<div class="strava"><span class="disc off"></span><div><b>Strava isn’t connected</b><span>Connect it once and rides go up by themselves</span></div><button class="btn sec" onClick=${() => c.openSheet({ type: 'settings', focus: 'strava' })}>Connect</button></div>`;
+  // Not sent yet: what to offer depends on Strava now, not when the ride ended.
+  if (st.canUpload) {
+    return html`<div class="strava"><span class="disc off"></span><div><b>Not uploaded yet</b><span>${up.status === 'idle' ? 'Auto-upload is off' : 'Saved on this phone'}</span></div><button class="btn pri" onClick=${() => c.upload()}>Upload</button></div>`;
+  }
+  return html`<div class="strava"><span class="disc off"></span><div><b>Strava isn’t connected</b><span>The ride is saved here · connect once and it goes up</span></div><button class="btn sec" onClick=${() => c.openSheet({ type: 'settings', focus: 'strava' })}>Connect</button></div>`;
 }
 
 // Racing your best: the attempt(s) on this ride.

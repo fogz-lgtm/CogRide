@@ -311,7 +311,9 @@ export function Home({ c }) {
         <header class="masthead">
           <span class="logo">CogRide</span>
           <span class="right">
-            ${s.strava.connected
+            ${s.strava.connected && (s.strava.needsReconnect || !s.strava.canUpload)
+              ? html`<button class="chip warn" onClick=${() => c.openSheet({ type: 'settings', focus: 'strava' })}>Strava · sign in</button>`
+              : s.strava.connected
               ? html`<span class="chip">✓ Strava${s.strava.pending ? ` · ${s.strava.pending} waiting` : ''}</span>`
               : html`<button class="chip" onClick=${() => c.openSheet({ type: 'settings', focus: 'strava' })}>Strava</button>`}
             <button class="avatar" aria-label="Settings" onClick=${() => c.openSheet({ type: 'settings' })}>${initials || '⋯'}</button>

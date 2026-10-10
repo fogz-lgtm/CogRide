@@ -227,15 +227,26 @@ function StravaCard({ c, s }) {
   const [error, setError] = useState('');
   if (st.connected) {
     const a = st.athlete;
+    const trouble = st.needsReconnect || !st.canUpload;
     return html`<div>
-      <${Row} title=${a ? `Connected as ${a.firstName ?? ''} ${a.lastName ?? ''}`.trim() : 'Connected'} sub=${st.canUpload ? 'Rides upload as virtual rides, marked “trainer”.' : 'Upload permission is off — reconnect and leave every box ticked.'}>
-        <span class="chip">✓ Strava</span>
+      <${Row}
+        title=${a ? `Connected as ${a.firstName ?? ''} ${a.lastName ?? ''}`.trim() : 'Connected'}
+        sub=${st.needsReconnect ? 'Strava stopped accepting this sign-in — reconnect to keep uploading.' : st.canUpload ? 'Rides upload as virtual rides, marked “trainer”.' : 'Upload permission is off — reconnect and leave every box ticked.'}
+      >
+        ${trouble ? html`<span class="chip warn">Needs sign-in</span>` : html`<span class="chip">✓ Strava</span>`}
       <//>
+      ${trouble && html`<button class="btn pri wide" onClick=${() => c.reconnectStrava()}>Reconnect Strava</button>`}
       <${Row} title="Upload rides automatically" sub="Right after you end a ride">
         <${Toggle} label="Upload automatically" on=${s.prefs.autoUpload} onChange=${(on) => c.setPrefs({ autoUpload: on })} />
       <//>
-      ${st.pending > 0 && html`<${Row} title=${`${st.pending} ride${st.pending > 1 ? 's' : ''} waiting`} sub="Saved on this phone; they’ll go up next time"><span></span><//>`}
-      <button class="btn ghost small" onClick=${() => c.disconnectStrava()}>Disconnect Strava</button>
+      ${st.pending > 0 &&
+      html`<${Row} title=${`${st.pending} ride${st.pending > 1 ? 's' : ''} waiting`} sub="Saved on this phone">
+        <button class="btn sec small" disabled=${trouble} onClick=${() => c.sendPending()}>Send now</button>
+      <//>`}
+      <div class="btnrow">
+        ${!trouble && html`<button class="btn ghost small" onClick=${() => c.reconnectStrava()}>Reconnect</button>`}
+        <button class="btn ghost small" onClick=${() => c.disconnectStrava()}>Disconnect Strava</button>
+      </div>
     </div>`;
   }
   const host = location.hostname || 'fogz-lgtm.github.io';
@@ -352,7 +363,7 @@ export function SettingsSheet({ c, s }) {
     <div class="section">
       <div class="k">Devices</div>
       <div class="note-card"><b>Wahoo KICKR Core + Zwift Cog</b>Close Zwift and the Wahoo app first — only one app can steer the trainer. CogRide shifts with the trainer’s own virtual shifting, like Zwift does; on older firmware it shifts in software instead.</div>
-      <div class="note-card"><b>Zwift Click</b>Tap the Click tile, then press a button so it shows up. A Click v2 is two pucks: connect each one. If the left puck locks itself after Zwift, CogRide restarts it.</div>
+      <div class="note-card"><b>Zwift Click</b>Tap the Click tile, then press a button so it shows up. A Click v2 is two pucks: connect each one. If the left puck locks itself, the right puck still shifts both ways: + is harder, B is easier.</div>
       <div class="note-card"><b>Coros Pace 3</b>On the watch: Settings › Heart Rate Broadcast › On. It talks to one app at a time, and not while it has sensors paired. CogRide records the ride, so don’t also save one on the watch (or you’ll get two on Strava).</div>
       <div class="note-card"><b>Keep the screen on</b>CogRide asks iOS to keep the screen awake while you ride. If it dims anyway, set Settings › Display › Auto-Lock to Never for your rides.</div>
       <div class="btnrow">

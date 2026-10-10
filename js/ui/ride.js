@@ -58,7 +58,7 @@ function RollNumber({ value, unit = null, cls = 'num', rollKey = value, boxClass
     if (rollKey === p.rollKey || value === p.value) return;
     const dir = Number(rollKey) > Number(p.rollKey) ? 1 : -1;
     const ghost = el.cloneNode(true);
-    ghost.classList.add('ghost');
+    ghost.classList.add('rollghost');
     ghost.style.left = `${el.offsetLeft}px`;
     ghost.style.top = `${el.offsetTop}px`;
     if (ghost.firstChild?.nodeType === 3) ghost.firstChild.nodeValue = String(p.value);

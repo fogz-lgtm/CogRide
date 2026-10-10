@@ -51,6 +51,17 @@ export function isConnected(s = loadStrava()) {
   return !!(s && s.refreshToken);
 }
 
+// Strava turned the saved sign-in down (revoked, replaced, or a permission
+// unticked since): it needs a fresh sign-in, not retries.
+export function needsReconnect(s = loadStrava()) {
+  return isConnected(s) && !!s.needsReconnect;
+}
+
+function markSignIn(ok) {
+  const s = loadStrava();
+  if (s && !!s.needsReconnect === ok) saveStrava({ ...s, needsReconnect: !ok });
+}
+
 export function canUpload(s = loadStrava()) {
   return isConnected(s) && typeof s.scope === 'string' && s.scope.split(/[ ,]+/).includes('activity:write');
 }
@@ -66,7 +77,8 @@ function randomState() {
 }
 
 // Step 1: remember the app credentials and send the browser to Strava.
-export function authorizeUrl({ clientId, clientSecret }, location = globalThis.location) {
+// force shows Strava's permission page again even if it was approved before.
+export function authorizeUrl({ clientId, clientSecret }, location = globalThis.location, { force = false } = {}) {
   const id = String(clientId || '').trim();
   const secret = String(clientSecret || '').trim();
   if (!/^\d+$/.test(id)) throw new Error('Client ID should be the number shown on your Strava API app page');
@@ -78,11 +90,17 @@ export function authorizeUrl({ clientId, clientSecret }, location = globalThis.l
     client_id: id,
     redirect_uri: redirectUri(location),
     response_type: 'code',
-    approval_prompt: 'auto',
+    approval_prompt: force ? 'force' : 'auto',
     scope: SCOPE,
     state,
   });
   return `${AUTH_URL}?${params}`;
+}
+
+// Sign in again with the app details already saved here.
+export function reconnectUrl(location = globalThis.location) {
+  const s = loadStrava() || {};
+  return authorizeUrl({ clientId: s.clientId, clientSecret: s.clientSecret }, location, { force: true });
 }
 
 async function tokenRequest(params, fetchImpl = globalThis.fetch) {
@@ -92,7 +110,13 @@ async function tokenRequest(params, fetchImpl = globalThis.fetch) {
     body: JSON.stringify(params),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.message || `Strava sign-in failed (${res.status})`);
+  if (!res.ok) {
+    const err = new Error(data.message || `Strava sign-in failed (${res.status})`);
+    err.status = res.status;
+    // A refused refresh token or app secret: retrying won't help.
+    err.auth = res.status === 400 || res.status === 401;
+    throw err;
+  }
   return data;
 }
 
@@ -120,6 +144,7 @@ export async function completeAuthorization(location = globalThis.location, { fe
       refreshToken: data.refresh_token,
       expiresAt: data.expires_at,
       scope: granted,
+      needsReconnect: false,
       athlete: data.athlete ? { id: data.athlete.id, firstName: data.athlete.firstname, lastName: data.athlete.lastname } : null,
     });
     const missing = SCOPE.split(',').filter((sc) => !granted.split(/[ ,]+/).includes(sc));
@@ -141,11 +166,17 @@ export async function accessToken({ fetchImpl, now = Date.now() } = {}) {
   const s = loadStrava();
   if (!isConnected(s)) throw new Error('Strava is not connected');
   if (s.accessToken && s.expiresAt > now / 1000 + 120) return s.accessToken;
-  const data = await tokenRequest(
-    { client_id: s.clientId, client_secret: s.clientSecret, grant_type: 'refresh_token', refresh_token: s.refreshToken },
-    fetchImpl,
-  );
-  saveStrava({ ...s, accessToken: data.access_token, refreshToken: data.refresh_token, expiresAt: data.expires_at });
+  let data;
+  try {
+    data = await tokenRequest(
+      { client_id: s.clientId, client_secret: s.clientSecret, grant_type: 'refresh_token', refresh_token: s.refreshToken },
+      fetchImpl,
+    );
+  } catch (err) {
+    if (err.auth) markSignIn(false);
+    throw err;
+  }
+  saveStrava({ ...loadStrava(), accessToken: data.access_token, refreshToken: data.refresh_token, expiresAt: data.expires_at });
   return data.access_token;
 }
 
@@ -157,6 +188,11 @@ async function api(path, { fetchImpl = globalThis.fetch, ...init } = {}) {
     const err = new Error(data.message || `Strava error ${res.status}`);
     err.status = res.status;
     err.body = data;
+    // 401: the sign-in was revoked or replaced, or lacks a permission. A
+    // missing read permission only costs that one feature (HR zones, say).
+    err.auth = res.status === 401;
+    const missing = (Array.isArray(data.errors) ? data.errors : []).find((e) => e?.code === 'missing')?.field;
+    if (err.auth && !(missing && !/write/.test(missing))) markSignIn(false);
     throw err;
   }
   return data;
@@ -283,10 +319,14 @@ export async function uploadFit(bytes, { name, description, externalId } = {}, {
   }
   if (upload.error) {
     const dup = /duplicate of (?:activity\s+|<a href='\/activities\/)?(\d+)/i.exec(upload.error);
-    if (dup) return { activityId: dup[1], duplicate: true };
+    if (dup) {
+      markSignIn(true);
+      return { activityId: dup[1], duplicate: true };
+    }
     throw new Error(upload.error);
   }
   if (!upload.activity_id) throw new Error('Strava is still processing the ride; it will appear shortly.');
+  markSignIn(true);
   return { activityId: String(upload.activity_id), duplicate: false };
 }
 

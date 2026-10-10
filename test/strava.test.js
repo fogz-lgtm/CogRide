@@ -174,3 +174,36 @@ test('segment track becomes points with elevation', async () => {
   assert.equal(t.name, 'Diablo North Gate');
   assert.deepEqual(t.points[1], { lat: 37.881, lon: -121.912, ele: 230 });
 });
+
+test('a refused sign-in asks for a reconnect, and reconnecting clears it', async () => {
+  S.saveStrava({ clientId: '12345', clientSecret: SECRET, accessToken: 'old', refreshToken: 'R', expiresAt: 100, scope: 'read,activity:write' });
+  const refused = fakeFetch(() => ({ status: 400, body: { message: 'Bad Request', errors: [{ resource: 'RefreshToken', field: 'refresh_token', code: 'invalid' }] } }));
+  await assert.rejects(S.accessToken({ fetchImpl: refused }), (err) => err.auth === true);
+  assert.equal(S.needsReconnect(), true);
+  assert.equal(S.isConnected(), true); // still shows who it was, with a way back
+
+  // Reconnect reuses the saved app details and shows Strava's permission page again.
+  const url = new URL(S.reconnectUrl(location));
+  assert.equal(url.searchParams.get('client_id'), '12345');
+  assert.equal(url.searchParams.get('approval_prompt'), 'force');
+  const fetchImpl = fakeFetch(() => ({ body: { access_token: 'A2', refresh_token: 'R2', expires_at: 2e9 } }));
+  const back = { ...location, search: `?state=${url.searchParams.get('state')}&code=C&scope=read,activity:read_all,activity:write,profile:read_all` };
+  assert.equal((await S.completeAuthorization(back, { fetchImpl, replaceUrl: () => {} })).ok, true);
+  assert.equal(S.needsReconnect(), false);
+  assert.equal(S.loadStrava().refreshToken, 'R2');
+});
+
+test('a lost upload permission asks for a reconnect; a missing read permission does not', async () => {
+  S.saveStrava({ clientId: '1', clientSecret: SECRET, accessToken: 'T', refreshToken: 'R', expiresAt: 2e9, scope: 'read,activity:write' });
+  const noZones = fakeFetch(() => ({ status: 401, body: { message: 'Authorization Error', errors: [{ resource: 'AccessToken', field: 'profile:read_all', code: 'missing' }] } }));
+  await assert.rejects(S.fetchSegmentTrack('229781', { fetchImpl: noZones }));
+  assert.equal(S.needsReconnect(), false);
+
+  const noWrite = fakeFetch(() => ({ status: 401, body: { message: 'Authorization Error', errors: [{ resource: 'AccessToken', field: 'activity:write_permission', code: 'missing' }] } }));
+  await assert.rejects(S.uploadFit(new Uint8Array([1]), {}, { fetchImpl: noWrite, pollMs: 1 }), (err) => err.auth === true);
+  assert.equal(S.needsReconnect(), true);
+
+  const ok = fakeFetch(() => ({ status: 201, body: { id: 1, id_str: '1', activity_id: 9 } }));
+  await S.uploadFit(new Uint8Array([1]), {}, { fetchImpl: ok, pollMs: 1 });
+  assert.equal(S.needsReconnect(), false);
+});

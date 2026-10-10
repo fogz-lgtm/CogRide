@@ -16,8 +16,9 @@ GitHub Pages, with no backend and no subscription.
   weight, Trainer Difficulty at 50 %, auto-brake and the super tuck on
   descents.
 - **Click and Click v2.** Plus is harder, minus is easier, and holding repeats.
-  Hold both together to pause or resume. Connect each v2 puck on its own. If
-  the left puck locks itself after a Zwift session, CogRide restarts it.
+  Hold both together to pause or resume. Connect each v2 puck on its own. Zwift
+  locks the left puck unless the Zwift app unlocked it in the last day; then
+  B on the right puck shifts easier, so one puck does both.
 - **Real climbs in 3D:** Alpe d'Huez, Ventoux, Tourmalet, Stelvio, Sa Calobra,
   Mount Diablo, Mount Tam, Old La Honda, Claremont, South Park, Hawk Hill. Each
   follows its real road and real elevation. There are also four calm loops,
@@ -53,6 +54,8 @@ GitHub Pages, with no backend and no subscription.
   link, on its real road and gradient.
 - **Gears and difficulty your way.** Zwift's gears, or a climbing set with
   closer, easier steps; trainer difficulty per road.
+- **Strava sign-in that heals.** If Strava stops accepting the sign-in,
+  rides wait on the phone and Settings offers Reconnect; they go up after.
 - **Doesn't lose rides.** The ride is checkpointed every 30 s; if the page
   reloads mid-ride, Home offers to save it. Every ride exports as `.fit`.
 

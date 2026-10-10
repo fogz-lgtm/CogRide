@@ -126,6 +126,10 @@ export class Controller extends EventTarget {
     this.capturePhoto = null; // set by the ride screen
     this.timer = setInterval(() => this.tick(), TICK_MS);
     document.addEventListener('visibilitychange', () => this.onVisibility());
+    // Strava can change under us: another tab finished signing in, or the
+    // page came back from the browser's back/forward cache.
+    globalThis.addEventListener?.('storage', (e) => e.key?.startsWith('cogride.strava') && this.refreshStrava());
+    globalThis.addEventListener?.('pageshow', (e) => e.persisted && this.refreshStrava());
   }
 
   get state() {
@@ -174,6 +178,7 @@ export class Controller extends EventTarget {
     return {
       connected: strava.isConnected(s),
       canUpload: strava.canUpload(s),
+      needsReconnect: strava.needsReconnect(s),
       athlete: s?.athlete ?? null,
       hasApp: !!(s?.clientId && s?.clientSecret),
       clientId: s?.clientId ?? '',
@@ -845,9 +850,17 @@ export class Controller extends EventTarget {
     this.set({ result: { ...result, upload: { ...result.upload, ...patch } } });
   }
 
+  refreshStrava() {
+    this.set({ strava: this.stravaState() });
+  }
+
   async upload() {
     const result = this.state.result;
-    if (!result || !strava.canUpload()) return;
+    if (!result) return;
+    if (!strava.canUpload()) {
+      this.setUpload({ status: 'off' });
+      return this.refreshStrava();
+    }
     clearTimeout(this.retryTimer);
     const attempt = (result.upload.attempt ?? 0) + 1;
     this.setUpload({ status: 'busy', attempt, message: '' });
@@ -860,8 +873,10 @@ export class Controller extends EventTarget {
       this.set({ strava: this.stravaState() });
     } catch (err) {
       strava.queueUpload(result.fit, meta);
-      this.setUpload({ status: 'err', message: err.message });
+      this.setUpload({ status: 'err', message: err.message, auth: !!err.auth });
       this.set({ strava: this.stravaState() });
+      // Strava refused the sign-in: only reconnecting helps, not retries.
+      if (err.auth) return;
       // Back off: 30 s, 2 min, 10 min; after that, the next app open retries.
       const wait = [30, 120, 600][attempt - 1];
       if (wait) this.retryTimer = setTimeout(() => this.state.result?.id === result.id && this.upload(), wait * 1000);
@@ -1014,7 +1029,9 @@ export class Controller extends EventTarget {
   // ---------------------------------------------------------------- sheets, toasts, TV
 
   openSheet(sheet) {
-    this.set({ sheet });
+    // Settings shows the Strava connection as it is now, not as it was at boot.
+    if (sheet?.type === 'settings') this.set({ sheet, strava: this.stravaState() });
+    else this.set({ sheet });
   }
 
   closeSheet() {
@@ -1148,7 +1165,43 @@ export class Controller extends EventTarget {
 
   connectStrava({ clientId, clientSecret }) {
     const url = strava.authorizeUrl({ clientId, clientSecret });
+    this.queueShownRide();
     location.href = url;
+  }
+
+  // Signing in leaves the page; the ride on screen waits in the queue and
+  // goes up when CogRide opens again.
+  queueShownRide() {
+    const r = this.state.result;
+    if (r && r.upload.status !== 'ok') strava.queueUpload(r.fit, { name: r.name, description: r.description, externalId: r.id });
+  }
+
+  // Sign in to Strava again with the saved app details, showing every
+  // permission box.
+  reconnectStrava() {
+    try {
+      const url = strava.reconnectUrl();
+      this.queueShownRide();
+      location.href = url;
+    } catch {
+      strava.disconnect();
+      this.refreshStrava();
+      this.openSheet({ type: 'settings', focus: 'strava' });
+    }
+  }
+
+  // Rides waiting on this phone: try them now.
+  async sendPending() {
+    const done = await strava.flushUploadQueue().catch(() => []);
+    this.afterFlush(done);
+    const left = strava.pendingUploads();
+    const n = (k) => `${k} ride${k === 1 ? '' : 's'}`;
+    if (!left) return this.toast({ title: 'Sent to Strava', body: `${n(done.length)} uploaded.` });
+    this.toast({
+      title: done.length ? `${n(done.length)} sent` : 'Still waiting',
+      body: strava.needsReconnect() ? `${n(left)} still here. Strava wants you to sign in again — tap Reconnect.` : `${n(left)} still here. Strava didn’t answer; we’ll keep trying.`,
+      ms: 7000,
+    });
   }
 
   disconnectStrava() {
@@ -1194,6 +1247,7 @@ export class Controller extends EventTarget {
       return;
     }
     sound.resumeAudio();
+    if (!riding) this.refreshStrava();
     if (this.state.screen === 'ride') this.requestWakeLock();
     this.lastTick = performance.now();
     const away = this.awayAt ? (Date.now() - this.awayAt) / 1000 : 0;
