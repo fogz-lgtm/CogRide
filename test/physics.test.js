@@ -33,11 +33,28 @@ test('momentum: accelerates toward steady speed, coasts down slowly', () => {
   assert.ok(Math.abs(p.speed - steady) < 0.05, `${p.speed} vs ${steady}`);
   const before = p.speed;
   p.step(5, 0, 0); // stop pedalling for 5 s
-  assert.ok(p.speed < before && p.speed > before * 0.75, `coasted to ${p.speed}`);
+  assert.ok(p.speed < before && p.speed > before * 0.6, `coasted to ${p.speed}`);
+  p.step(25, 0, 0); // auto-brake brings a free-ride coast to a stop
+  assert.equal(p.speed, 0);
+  // momentum: a 2 s soft-pedal costs only ~1 km/h at 35 km/h
+  const m = bot();
+  m.speed = 35 / 3.6;
+  m.step(2, 100, 0);
+  assert.ok(35 - kmh(m.speed) < 2, `lost ${35 - kmh(m.speed)} km/h`);
   // Descents build speed without pedalling
   const d = bot();
   for (let t = 0; t < 120; t++) d.step(1, 0, -0.06);
-  assert.ok(kmh(d.speed) > 45, `descent ${kmh(d.speed)}`);
+  assert.ok(kmh(d.speed) > 50 && kmh(d.speed) < 58, `descent ${kmh(d.speed)}`); // ~55 km/h terminal
+  assert.equal(d.tucked, false);
+  // Steeper: past 58 km/h the rider tucks and goes faster still
+  const t8 = bot();
+  for (let t = 0; t < 150; t++) t8.step(1, 0, -0.08);
+  assert.equal(t8.tucked, true);
+  assert.ok(kmh(t8.speed) > 66, `tucked descent ${kmh(t8.speed)}`);
+  // standing start on a climb
+  const s = bot();
+  for (let t = 0; t < 30; t++) s.step(1, 250, 0.06);
+  assert.ok(Math.abs(kmh(s.speed) - kmh(s.steadySpeed(250, 0.06))) < 0.5);
   // Steep climb with no power stalls rather than rolling backwards
   const c = bot();
   c.speed = 3;

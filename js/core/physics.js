@@ -59,9 +59,11 @@ export class RiderPhysics {
     bikeCdaBias = DEFAULT_RIDER.bikeCdaBias,
     crr = CRR.tarmac,
     drivetrainEfficiency = 1,
-    wheelInertiaKg = 1.4, // rotating wheels act like extra mass when speeding up
+    wheelInertiaKg = 1.0, // rotating wheels act like a little extra mass when speeding up
     maxSpeed = 120 / 3.6,
     useAltitudeDensity = false,
+    autoBrake = true, // free-ride coast-down, like Zwift outside races
+    supertuck = true,
   } = {}) {
     this.massKg = riderKg + bikeKg;
     this.cda = cda ?? estimateCdA(heightCm, riderKg, bikeCdaBias);
@@ -70,6 +72,10 @@ export class RiderPhysics {
     this.effectiveMass = this.massKg + wheelInertiaKg;
     this.maxSpeed = maxSpeed;
     this.useAltitudeDensity = useAltitudeDensity;
+    this.autoBrake = autoBrake;
+    this.supertuck = supertuck;
+    this.coastSeconds = 0;
+    this.tucked = false;
   }
 
   // Resistive forces (N) at speed v on gradient (fraction, 0.05 = 5%).
@@ -101,26 +107,56 @@ export class RiderPhysics {
     return (lo + hi) / 2;
   }
 
+  // Light braking when you stop pedalling on flat or rolling road, so a
+  // free-ride coast-down takes ~15 s instead of minutes (Zwift does this
+  // outside races). Off on real descents, so you still freewheel downhill.
+  brakeForce(dt, power, grade) {
+    if (!this.autoBrake || power > 10 || grade <= -0.03) {
+      this.coastSeconds = 0;
+      return 0;
+    }
+    this.coastSeconds += dt;
+    if (this.coastSeconds < 1) return 0;
+    return this.speed < 7.5 ? 40 : 20;
+  }
+
   // Advance dt seconds with the rider producing `power` watts on `grade`.
+  // Integrates kinetic energy (midpoint), which is well behaved from a
+  // standstill and gives Zwift-like momentum over rollers and descents.
   step(dt, power, grade, altitudeM = 0) {
     const sub = Math.max(1, Math.ceil(dt / 0.05));
     const h = dt / sub;
+    const p = Math.max(0, power || 0) * this.drivetrainEfficiency;
     for (let i = 0; i < sub; i++) {
-      const v = this.speed;
-      // Force from the pedals; near standstill use a capped "push" so a
-      // standing start accelerates instead of dividing by zero.
-      const drive = power > 0 ? (power * this.drivetrainEfficiency) / Math.max(v, 1.0) : 0;
-      const { total } = this.resistance(v, grade, altitudeM);
-      let accel = (drive - total) / this.effectiveMass;
-      let next = v + accel * h;
-      if (next < 0) {
+      // Supertuck: fast, steep descent, not pedalling: ~25% less drag.
+      this.tucked = this.supertuck && this.speed > 16.1 && grade <= -0.03 && p < 11;
+      const cdaScale = this.tucked ? 0.75 : 1;
+      const brake = this.brakeForce(h, p, grade);
+      const resist = (v) => {
+        const r = this.resistance(v, grade, altitudeM);
+        return r.gravity + r.rolling + r.aero * cdaScale + brake * Math.sign(v);
+      };
+      const m = this.effectiveMass;
+      const v0 = this.speed;
+      let v1;
+      if (v0 < 1) {
+        // From (near) standstill the energy form can't start moving under
+        // gravity alone, so use forces with a capped pedal push instead.
+        const accel = (p / Math.max(v0, 1) - resist(v0)) / m;
+        v1 = Math.max(0, v0 + accel * h);
+      } else {
+        const e0 = 0.5 * m * v0 * v0;
+        const eHalf = Math.max(0, e0 + 0.5 * h * (p - resist(v0) * v0));
+        const vMid = Math.sqrt((2 * eHalf) / m);
+        const e1 = Math.max(0, e0 + h * (p - resist(vMid) * vMid));
         // Bikes don't roll backwards in a game: stall on very steep climbs.
-        next = 0;
-        accel = 0;
+        v1 = Math.sqrt((2 * e1) / m);
       }
-      next = Math.min(next, this.maxSpeed);
-      this.distance += ((v + next) / 2) * h;
-      this.speed = next;
+      v1 = Math.min(this.maxSpeed, v1);
+      // Energy decay only approaches zero; come to a proper stop when coasting.
+      if (brake > 0 && v1 < 0.3) v1 = 0;
+      this.distance += ((v0 + v1) / 2) * h;
+      this.speed = v1;
     }
     return this.speed;
   }
