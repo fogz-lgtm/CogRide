@@ -223,3 +223,23 @@ test('road index nearest() agrees with brute force', () => {
     assert.ok(Math.abs(near.distance - best) < 1e-6, `${near.distance} vs ${best}`);
   }
 });
+
+test('coarse tiles that stand in near the rider never put terrain on the road', () => {
+  for (const level of [1, 2]) {
+    const size = LEVELS[level].size;
+    for (const id of ['alpe-dhuez', 'mount-tam-mill-valley', 'fogline-coast']) {
+      const route = load(id);
+      const ctx = createContext(route, themeFor(route, 'golden'));
+      const leaves = new Map();
+      for (let d = 0; d <= Math.min(route.length, 6000); d += 41) {
+        const s = route.stateAt(d);
+        const ix = Math.floor(s.x / size);
+        const iz = Math.floor(s.z / size);
+        const key = `${ix},${iz}`;
+        if (!leaves.has(key)) leaves.set(key, buildLeaf(ctx, level, ix, iz));
+        const g = groundUnder(leaves.get(key), s.x, s.z);
+        if (g != null) assert.ok(g <= s.elevation + 0.05, `${id} level ${level} at ${d} m: ground ${(g - s.elevation).toFixed(2)} m above the road`);
+      }
+    }
+  }
+});

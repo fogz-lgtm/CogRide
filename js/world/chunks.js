@@ -360,15 +360,21 @@ export function buildLeaf(ctx, level, ix, iz) {
       pz[k] = z0 + j * step + jz;
     }
   }
-  const bed = level === 0 ? new Float32Array(N) : null;
+  // Every level that draws a road also trenches under it. Coarser tiles
+  // stand in near the rider while the fine ones are still being built, and
+  // untrenched they put hillsides on the road.
+  const roadLevel = level < ROAD_SIMPLIFY.length;
+  const bed = roadLevel ? new Float32Array(N) : null;
   const reach = ctx.so + step * 1.45;
   ctx.field.fill(px, pz, n, n, x0, z0, step, h, dd, bed, reach);
   if (bed) {
-    // Trench under the near-road ribbon (below every road leg within reach)
-    // so coarse triangles can't bridge a cut, or the gap between stacked
-    // hairpins, and poke over the road. The ribbon carries the real shape.
+    // Trench under the road ribbon (below every road leg within reach) so
+    // terrain triangles can't bridge a cut, or the gap between stacked
+    // hairpins, and poke over the road. The ribbon carries the real shape;
+    // coarser ribbons may sit up to their simplification error lower.
+    const sink = 0.25 + (level ? ROAD_SIMPLIFY[level].vert : 0);
     for (let k = 0; k < N; k++) {
-      if (bed[k] === bed[k] && h[k] > bed[k] - 0.25) h[k] = bed[k] - 0.25;
+      if (bed[k] === bed[k] && h[k] > bed[k] - sink) h[k] = bed[k] - sink;
     }
   }
   const tHeights = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0;
