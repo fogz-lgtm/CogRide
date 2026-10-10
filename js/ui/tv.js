@@ -9,6 +9,7 @@ import { Icon } from './icons.js';
 import { clock, countdown, stepZone, stepFraction, U, shortName } from './format.js';
 import { zone2 } from '../app/prefs.js';
 import { workPosition } from '../app/plans.js';
+import { ElevationStrip, WorkoutProfile, Trace } from './charts.js';
 import { ambientAudioSupported } from './sound.js';
 
 // T0 flood (1.6 s) → rim (to T+10 s) → off.
@@ -45,6 +46,31 @@ function Pulse({ tick, children }) {
     last.current = tick;
   }, [tick]);
   return html`<div ref=${ref} style=${{ transformOrigin: 'left bottom' }}>${children}</div>`;
+}
+
+// Where heart rate sits in the Zone 2 band, at a glance from across the room.
+function Z2Mini({ snap, prefs }) {
+  const z = zone2(prefs);
+  const lo = 100;
+  const hi = 175;
+  const pos = (v) => `${((Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo)) * 100}%`;
+  const ap = snap.autopilot;
+  return html`<div class="z2band">
+    <div class="zone" style=${{ left: pos(z.min), width: `calc(${pos(z.max)} - ${pos(z.min)})` }}></div>
+    ${ap && html`<div class="target" style=${{ left: pos(ap.targetHr) }}></div>`}
+    ${snap.heartRate && html`<div class="me" style=${{ left: pos(snap.heartRate) }}></div>`}
+  </div>`;
+}
+
+// On a road: the gradient and where you are on the climb.
+function RoadLine({ route, snap, units }) {
+  const a = route.stateAt(snap.distance);
+  const b = route.stateAt(snap.distance + 50);
+  const grade = ((b.elevation - a.elevation) / 50) * 100;
+  return html`<div class="tvroad">
+    <div><div class="k">Grade</div><div class="num">${grade.toFixed(1)}<span class="u">%</span></div></div>
+    <${ElevationStrip} route=${route} distance=${snap.distance} units=${units} />
+  </div>`;
 }
 
 const N = ({ k, v, u, cls = 'num', style, kstyle }) => html`<div><div class="k" style=${kstyle}>${k}</div><div class=${cls} style=${style}>${v}${u && html`<span class="u">${u}</span>`}</div></div>`;
@@ -122,6 +148,9 @@ export function TvMode({ c, s, snap, mode }) {
     </div>
     <div class="data">
       <div class=${`row1 ${row1.length === 1 ? 'solo' : ''}`}>${row1}</div>
+      ${mode === 'z2' && html`<${Z2Mini} snap=${snap} prefs=${prefs} /><div class="tvprofile"><${Trace} samples=${c.engine.samples} zone=${zone2(prefs)} className="" /></div>`}
+      ${mode === 'erg' && (c.engine.workout ?? plan.workout) && html`<div class="tvprofile"><${WorkoutProfile} workout=${c.engine.workout ?? plan.workout} clock=${w?.clock ?? 0} className="" /></div>`}
+      ${mode === 'route' && route && html`<${RoadLine} route=${route} snap=${snap} units=${units} />`}
       <div class=${`row2 ${row2.length === 3 ? 'three' : ''}`}>${row2}</div>
       <div class="row3">
         <div class="ctx"><span>${ctx[0]}</span><span>${ctx[1]}</span></div>

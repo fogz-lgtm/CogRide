@@ -1591,36 +1591,6 @@ select {
     width: 60%;
     height: auto;
   }
-  .tv .dock .frame {
-    top: 22px;
-    bottom: 40px;
-    left: 24px;
-    right: max(var(--safe-r), 24px);
-  }
-  .tv .data {
-    left: max(var(--safe-l), calc(20 * var(--s)));
-    right: calc(60% + 16px);
-    top: calc(18 * var(--s));
-  }
-  .tv .row1 {
-    grid-template-columns: 1fr;
-    gap: 0;
-  }
-  .tv .row1 > div + div {
-    display: none;
-  }
-  .tv .row1 .snum,
-  .tv .row1 .num {
-    font-size: calc(120 * var(--s));
-  }
-  .tv .row2 .num {
-    font-size: calc(46 * var(--s));
-  }
-  .tv .exit {
-    top: 10px;
-    right: auto;
-    left: calc(40% - 100px);
-  }
 }
 
 /* ---------------------------------------------------------------- pause & summary */
@@ -2089,16 +2059,6 @@ select {
 .tv .data .k {
   display: block;
 }
-@media (orientation: landscape) {
-  .tv .row1 > div:first-child {
-    display: none;
-  }
-  .tv .row1 > div + div {
-    display: block;
-    border-left: 0;
-    padding-left: 0;
-  }
-}
 .screen.ride .tv {
   z-index: 30;
 }
@@ -2137,22 +2097,6 @@ select {
   left: 20px;
   right: 110px;
   text-align: left;
-}
-@media (orientation: landscape) {
-  .tv .row1 > div:first-child:not(:only-child) {
-    display: none;
-  }
-  .tv .row1 > div:only-child {
-    display: block;
-  }
-  .tv .exit {
-    bottom: auto;
-    top: 10px;
-  }
-  .tv .row2.three .num,
-  .tv .row2.three .snum {
-    font-size: calc(40 * var(--s));
-  }
 }
 .summary .zonek {
   white-space: normal;
@@ -2197,5 +2141,145 @@ select {
   }
   .hero .num.long {
     font-size: calc(96 * var(--s));
+  }
+}
+
+@media (orientation: portrait) {
+  .tv .row1:not(.solo) .snum {
+    font-size: calc(112 * var(--s));
+  }
+  .tv .row1:not(.solo) .num {
+    font-size: calc(122 * var(--s));
+  }
+}
+
+/* ---------------------------------------------------------------- TV mode, landscape
+   The main way to ride: the show floats in the right 60 % (away from the
+   Dynamic Island); numbers sit in the left column; controls tuck under the
+   show so they never cover a number. */
+@media (orientation: landscape) {
+  .tv .dock .frame {
+    top: max(var(--safe-t), 14px);
+    bottom: 58px;
+    left: 18px;
+    right: max(var(--safe-r), 18px);
+  }
+  .tv .dock .hint {
+    left: 22px;
+    right: 130px;
+    bottom: 20px;
+  }
+  .tv .exit {
+    top: auto;
+    bottom: max(var(--safe-b), 10px);
+    left: auto;
+    right: max(var(--safe-r), 16px);
+  }
+  .tv .data {
+    left: max(var(--safe-l), calc(20 * var(--s)));
+    right: calc(60% + 18px);
+    top: max(var(--safe-t), calc(16 * var(--s)));
+    bottom: max(var(--safe-b), calc(12 * var(--s)));
+  }
+  .tv .row1 {
+    grid-template-columns: auto 1fr;
+    gap: calc(16 * var(--s));
+  }
+  .tv .row1 > div + div {
+    display: block;
+    border-left: 1px solid var(--rule);
+    padding-left: calc(16 * var(--s));
+  }
+  .tv .row1 .snum {
+    font-size: calc(80 * var(--s));
+  }
+  .tv .row1 .num {
+    font-size: calc(98 * var(--s));
+  }
+  .tv .row1.solo .num {
+    font-size: calc(122 * var(--s));
+  }
+  .tv .row2 {
+    padding-top: calc(12 * var(--s));
+  }
+  .tv .row2 .num,
+  .tv .row2 .snum {
+    font-size: calc(46 * var(--s));
+    margin-top: calc(8 * var(--s));
+  }
+  .tv .row2.three .num,
+  .tv .row2.three .snum {
+    font-size: calc(38 * var(--s));
+  }
+  .tv .row2 > div + div {
+    padding-left: calc(12 * var(--s));
+  }
+  .tv .row3 {
+    margin-top: calc(12 * var(--s));
+  }
+  .tv .row3 .ctx {
+    flex-direction: column;
+    gap: 2px;
+    font-size: calc(14 * var(--s));
+  }
+  .tv .z2band {
+    margin-top: calc(18 * var(--s));
+  }
+  .tv .go em {
+    font-size: 44px;
+  }
+}
+.tv .z2band {
+  margin-top: calc(22 * var(--s));
+}
+.tv .row1 {
+  align-items: stretch;
+}
+.tv .row1 > div {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.tv .tvroad {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: calc(16 * var(--s));
+  align-items: end;
+  margin-top: calc(22 * var(--s));
+}
+.tv .tvroad .num {
+  font-size: calc(46 * var(--s));
+  margin-top: calc(8 * var(--s));
+}
+.tv .tvroad svg {
+  display: block;
+  width: 100%;
+  height: calc(40 * var(--s));
+  overflow: visible;
+}
+.tv .tvprofile {
+  margin-top: calc(18 * var(--s));
+  height: calc(52 * var(--s));
+}
+.tv .tvprofile svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.tv .dock.flood .hint {
+  opacity: 0;
+}
+@media (orientation: landscape) {
+  .tv .go {
+    justify-content: flex-start;
+    gap: 18px;
+    right: 140px;
+    bottom: 14px;
+  }
+  .tv .go span {
+    text-align: left;
+  }
+  .tv .tvprofile {
+    height: calc(44 * var(--s));
   }
 }
