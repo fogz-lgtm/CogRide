@@ -1,14 +1,17 @@
-// Zwift Click (and Zwift Play / Ride) controller protocol.
+// Zwift Click v1, Click v2 (two pucks) and Play controllers.
 //
-// The controllers expose a custom service with three characteristics:
-//   async  (notify)   – button state messages
-//   syncRx (write)    – we send the "RideOn" handshake here
-//   syncTx (indicate) – handshake replies and other sync messages
-// After writing "RideOn" + start request, the controller streams unencrypted
-// messages: one type byte followed by a protobuf body. Button fields use
-// ON = 0 / OFF = 1, i.e. 0 means pressed.
+// Each controller exposes Zwift's service with three characteristics: async
+// (notify, button frames), syncRx (write) and syncTx (indicate). Writing the
+// bare "RideOn" makes current firmware stream plaintext frames: one opcode
+// byte + a protobuf body. Buttons are active-low (0 / a cleared bit = pressed).
+//
+// Click v2 is two separate Bluetooth devices, both named "Zwift Click": the
+// right puck (+, A/B/Y/Z) and the left puck (−, D-pad). Zwift locks the left
+// puck to its own app about a minute after another app connects (unless Zwift
+// unlocked it in the last ~24 h). So B on the right puck also shifts down,
+// and a locked left puck is reset and reconnected automatically.
 
-import { BleDevice, writeCharacteristic } from './bleDevice.js';
+import { BleDevice, writeCharacteristic, subscribe, bytesOf, UUID } from './bleDevice.js';
 import { decodeFields, firstField } from '../protobuf.js';
 
 export const ZWIFT_MANUFACTURER_ID = 0x094a;
@@ -19,13 +22,15 @@ export const SYNC_RX_CHAR = '00000003-19ca-4651-86e5-fa29dcdd09d1';
 export const SYNC_TX_CHAR = '00000004-19ca-4651-86e5-fa29dcdd09d1';
 
 export const RIDE_ON = [0x52, 0x69, 0x64, 0x65, 0x4f, 0x6e]; // "RideOn"
-export const REQUEST_START = [0x00, 0x09];
-export const HANDSHAKE = Uint8Array.from([...RIDE_ON, ...REQUEST_START]);
+export const HANDSHAKE = Uint8Array.from(RIDE_ON);
+export const VENDOR_UNLOCK_ACK = Uint8Array.from([0xff, 0x04, 0x00]);
+export const RESET = Uint8Array.from([0x18]);
+export const GET_DEVICE_INFO = Uint8Array.from([0x00, 0x08, 0x00]);
 
-export const MessageType = { PLAY: 0x07, EMPTY: 0x15, BATTERY: 0x19, RIDE: 0x23, CLICK: 0x37 };
+export const MessageType = { PLAY: 0x07, EMPTY: 0x15, BATTERY: 0x19, CONTROLLER: 0x23, CLICK: 0x37, VENDOR: 0xff, LOST_CONTROL: 0xfe };
 
-// Zwift Ride button bitmap (bit cleared = pressed). Newer Click firmware also uses it.
-const RIDE_BUTTONS = [
+// Click v2 / Ride button map (bit clear = pressed).
+const CONTROLLER_BUTTONS = [
   ['left', 0x1],
   ['up', 0x2],
   ['right', 0x4],
@@ -33,16 +38,23 @@ const RIDE_BUTTONS = [
   ['a', 0x10],
   ['b', 0x20],
   ['y', 0x40],
-  ['z', 0x100],
-  ['shiftUp', 0x200], // left shift-up paddle
-  ['shiftDown', 0x400], // left shift-down paddle
-  ['powerUpLeft', 0x800],
-  ['onOffLeft', 0x1000],
-  ['shiftUp', 0x2000], // right shift-up paddle
-  ['shiftDown', 0x4000], // right shift-down paddle
-  ['powerUpRight', 0x10000],
-  ['onOffRight', 0x20000],
+  ['z', 0x80],
+  ['minus', 0x100], // Click v2 "−" (Ride: left shift up)
+  ['rideLeftDown', 0x200],
+  ['rideLeftPower', 0x400],
+  ['rideLeftOnOff', 0x800],
+  ['plus', 0x1000], // Click v2 "+" (Ride: right shift up)
+  ['rideRightDown', 0x2000],
+  ['rideRightPower', 0x4000],
+  ['rideRightOnOff', 0x8000],
 ];
+
+const LEFT_PUCK_BUTTONS = new Set(['minus', 'left', 'up', 'right', 'down']);
+const RIGHT_PUCK_BUTTONS = new Set(['plus', 'a', 'b', 'y', 'z']);
+
+// Which way each button shifts. B doubles as "down" so a right puck alone
+// can shift both ways.
+export const SHIFT_MAP = { plus: 1, minus: -1, b: -1, rideRightDown: -1, rideLeftDown: -1 };
 
 const isPressed = (value) => (value ?? 0) === 0;
 
@@ -51,25 +63,28 @@ function startsWith(bytes, prefix) {
 }
 
 export function parseControllerMessage(bytes) {
-  if (!bytes.length) return null;
-  if (startsWith(bytes, RIDE_ON)) return { kind: 'handshake' };
+  if (!bytes?.length) return null;
+  if (startsWith(bytes, RIDE_ON)) {
+    // "RideOn" + 02 03… = Click v2; > 8 bytes = old firmware wanting encryption.
+    return { kind: 'handshake', legacyEncryption: bytes.length > 8 + 32, v2: bytes[6] === 0x02 && bytes[7] === 0x03 };
+  }
   const type = bytes[0];
   const body = bytes.subarray(1);
   try {
     switch (type) {
       case MessageType.CLICK: {
         const pressed = new Set();
-        if (!body.length) return { kind: 'buttons', pressed };
+        if (!body.length) return { kind: 'buttons', pressed, model: 'click-v1' };
         const f = decodeFields(body);
-        if (isPressed(firstField(f, 1))) pressed.add('shiftUp');
-        if (isPressed(firstField(f, 2))) pressed.add('shiftDown');
-        return { kind: 'buttons', pressed };
+        if (isPressed(firstField(f, 1))) pressed.add('plus');
+        if (isPressed(firstField(f, 2))) pressed.add('minus');
+        return { kind: 'buttons', pressed, model: 'click-v1' };
       }
-      case MessageType.RIDE: {
+      case MessageType.CONTROLLER: {
         const pressed = new Set();
         const map = firstField(decodeFields(body), 1);
         if (typeof map !== 'number') return { kind: 'buttons', pressed };
-        for (const [name, mask] of RIDE_BUTTONS) if ((map & mask) === 0) pressed.add(name);
+        for (const [name, mask] of CONTROLLER_BUTTONS) if ((map & mask) === 0) pressed.add(name);
         return { kind: 'buttons', pressed };
       }
       case MessageType.PLAY: {
@@ -77,17 +92,23 @@ export function parseControllerMessage(bytes) {
         if (!body.length) return { kind: 'buttons', pressed };
         const f = decodeFields(body);
         const rightPad = isPressed(firstField(f, 1));
-        const named = rightPad
-          ? [[2, 'y'], [3, 'z'], [4, 'a'], [5, 'b']]
-          : [[2, 'up'], [3, 'left'], [4, 'right'], [5, 'down']];
+        const named = rightPad ? [[2, 'y'], [3, 'z'], [4, 'a'], [5, 'b']] : [[2, 'up'], [3, 'left'], [4, 'right'], [5, 'down']];
         for (const [field, name] of named) if (isPressed(firstField(f, field))) pressed.add(name);
-        if (isPressed(firstField(f, 6))) pressed.add(rightPad ? 'shiftUp' : 'shiftDown');
+        if (isPressed(firstField(f, 6))) pressed.add(rightPad ? 'plus' : 'minus');
         return { kind: 'buttons', pressed };
       }
-      case MessageType.BATTERY:
-        return { kind: 'battery', level: bytes[1] };
+      case MessageType.BATTERY: {
+        const f = decodeFields(body);
+        return { kind: 'battery', level: firstField(f, 2) ?? null };
+      }
+      case MessageType.VENDOR:
+        // FF 05 00 EA 05 / FF 05 00 FA 05: the left puck locked itself.
+        if (bytes[1] === 0x05 && bytes[2] === 0x00 && (bytes[3] === 0xea || bytes[3] === 0xfa) && bytes[4] === 0x05) return { kind: 'locked' };
+        return { kind: 'vendor', subtype: bytes[1] };
       case MessageType.EMPTY:
         return { kind: 'empty' };
+      case MessageType.LOST_CONTROL:
+        return { kind: 'lost-control' };
       default:
         return { kind: 'unknown', type };
     }
@@ -97,16 +118,27 @@ export function parseControllerMessage(bytes) {
 }
 
 export class ZwiftClick extends BleDevice {
-  constructor() {
+  constructor({ autoResetWhenLocked = true } = {}) {
     super('Click');
     this.pressed = new Set();
     this.battery = null;
+    this.side = null; // 'left' | 'right' once known
+    this.model = null; // 'click-v1' | 'click-v2' | null
+    this.autoResetWhenLocked = autoResetWhenLocked;
+    this.poll = null;
+    this.lastFrameAt = 0;
+  }
+
+  get displayName() {
+    if (this.model === 'click-v2' && this.side) return `Click ${this.side === 'right' ? 'right (+)' : 'left (−)'}`;
+    return this.device?.name || 'Click';
   }
 
   requestOptions() {
+    // The 128-bit service filter is what Bluefy handles most reliably.
     return {
-      filters: [{ manufacturerData: [{ companyIdentifier: ZWIFT_MANUFACTURER_ID }] }, { namePrefix: 'Zwift Click' }, { namePrefix: 'Zwift Play' }, { namePrefix: 'Zwift Ride' }],
-      optionalServices: [ZWIFT_CUSTOM_SERVICE, ZWIFT_FC82_SERVICE, 'battery_service'],
+      filters: [{ services: [ZWIFT_CUSTOM_SERVICE] }, { namePrefix: 'Zwift Click' }, { namePrefix: 'Zwift Play' }],
+      optionalServices: [ZWIFT_CUSTOM_SERVICE, ZWIFT_FC82_SERVICE, UUID.BATTERY, UUID.DEVICE_INFO],
     };
   }
 
@@ -125,48 +157,83 @@ export class ZwiftClick extends BleDevice {
     const chars = await service.getCharacteristics();
     const byUuid = (uuid) => chars.find((c) => c.uuid === uuid);
     const asyncChar = byUuid(ASYNC_CHAR) ?? chars.find((c) => c.properties.notify);
-    const syncRx = byUuid(SYNC_RX_CHAR) ?? chars.find((c) => c.properties.write || c.properties.writeWithoutResponse);
+    this.syncRx = byUuid(SYNC_RX_CHAR) ?? chars.find((c) => c.properties.write || c.properties.writeWithoutResponse);
     const syncTx = byUuid(SYNC_TX_CHAR) ?? chars.find((c) => c.properties.indicate);
-    if (!asyncChar || !syncRx) throw new Error('Zwift controller characteristics not found.');
+    if (!asyncChar || !this.syncRx) throw new Error('Zwift controller characteristics not found.');
+    // Click v2 pucks have two extra "unlock" characteristics.
+    if (chars.some((c) => c.uuid.startsWith('00000100-19ca') || c.uuid.startsWith('00000101-19ca'))) this.model = 'click-v2';
 
-    const onValue = (event) => this.handleMessage(event.target.value);
-    asyncChar.oncharacteristicvaluechanged = onValue;
-    await asyncChar.startNotifications();
-    if (syncTx) {
-      syncTx.oncharacteristicvaluechanged = onValue;
-      await syncTx.startNotifications();
-    }
+    await subscribe(asyncChar, (v) => this.handleMessage(v));
+    if (syncTx) await subscribe(syncTx, (v) => this.handleMessage(v));
     this.pressed = new Set();
-    await writeCharacteristic(syncRx, HANDSHAKE, { preferWithoutResponse: true });
-    this.readBattery(server);
+    await writeCharacteristic(this.syncRx, HANDSHAKE, { preferWithoutResponse: true });
+
+    // A gentle poll keeps a lone right puck from switching itself off.
+    clearInterval(this.poll);
+    this.poll = setInterval(() => this.write(GET_DEVICE_INFO), 20000);
+    this.poll?.unref?.();
   }
 
-  async readBattery(server) {
+  disconnect() {
+    clearInterval(this.poll);
+    super.disconnect();
+  }
+
+  async write(bytes) {
+    if (!this.connected || !this.syncRx) return;
     try {
-      const svc = await server.getPrimaryService('battery_service');
-      const level = await svc.getCharacteristic('battery_level');
-      this.battery = (await level.readValue()).getUint8(0);
-      this.dispatchEvent(new CustomEvent('battery', { detail: { level: this.battery } }));
+      await writeCharacteristic(this.syncRx, bytes, { preferWithoutResponse: true });
     } catch {
-      // battery is optional
+      // a missed poll is harmless
     }
   }
 
   handleMessage(dataView) {
-    const bytes = new Uint8Array(dataView.buffer, dataView.byteOffset, dataView.byteLength);
-    const message = parseControllerMessage(bytes);
+    const message = parseControllerMessage(bytesOf(dataView));
     if (!message) return;
-    if (message.kind === 'battery') {
-      this.battery = message.level;
-      this.dispatchEvent(new CustomEvent('battery', { detail: { level: message.level } }));
-    } else if (message.kind === 'buttons') {
-      for (const name of message.pressed) {
-        if (this.pressed.has(name)) continue;
-        this.dispatchEvent(new CustomEvent('button', { detail: { name } }));
-        if (name === 'shiftUp') this.dispatchEvent(new CustomEvent('shift', { detail: { direction: 1 } }));
-        if (name === 'shiftDown') this.dispatchEvent(new CustomEvent('shift', { detail: { direction: -1 } }));
-      }
-      this.pressed = message.pressed;
+    this.lastFrameAt = Date.now();
+    switch (message.kind) {
+      case 'handshake':
+        if (message.legacyEncryption) {
+          this.dispatchEvent(new CustomEvent('warning', { detail: { message: 'This Click needs a firmware update (open Zwift Companion, then pair the Click there once).' } }));
+        }
+        if (message.v2) {
+          this.model = 'click-v2';
+          // Harmless if the puck wasn't unlocked by Zwift; required if it was.
+          this.write(VENDOR_UNLOCK_ACK);
+        }
+        break;
+      case 'battery':
+        if (message.level != null) {
+          this.battery = message.level;
+          this.dispatchEvent(new CustomEvent('battery', { detail: { level: message.level } }));
+        }
+        break;
+      case 'locked':
+        this.side = 'left';
+        this.dispatchEvent(new CustomEvent('locked', { detail: { willReset: this.autoResetWhenLocked } }));
+        // Resetting reboots the puck; BleDevice reconnects and re-handshakes.
+        if (this.autoResetWhenLocked) this.write(RESET);
+        break;
+      case 'buttons':
+        if (message.model) this.model = message.model;
+        this.handleButtons(message.pressed);
+        break;
+      default:
+        break;
     }
+  }
+
+  handleButtons(pressed) {
+    for (const name of pressed) {
+      if (this.pressed.has(name)) continue;
+      if (!this.side && LEFT_PUCK_BUTTONS.has(name) && this.model === 'click-v2') this.side = 'left';
+      if (!this.side && RIGHT_PUCK_BUTTONS.has(name) && this.model === 'click-v2') this.side = 'right';
+      this.dispatchEvent(new CustomEvent('press', { detail: { button: name, shift: SHIFT_MAP[name] ?? 0 } }));
+    }
+    for (const name of this.pressed) {
+      if (!pressed.has(name)) this.dispatchEvent(new CustomEvent('release', { detail: { button: name, shift: SHIFT_MAP[name] ?? 0 } }));
+    }
+    this.pressed = pressed;
   }
 }
