@@ -9,6 +9,7 @@
 // (climb to the summit, then descend the same road), like riding a real climb.
 
 export const STEP_M = 5;
+const EARTH_R = 6371008.8;
 
 // Small deterministic PRNG so a route always looks the same.
 export function mulberry32(seed) {
@@ -288,7 +289,48 @@ export function loopPath({ lengthM, seed = 1, wobble = 0.18 }) {
   return { x, z };
 }
 
-export function buildRoute(def) {
+// Close a loop drawn from turn cues: spread the end-to-start gap along it.
+export function closePath({ x, z }) {
+  const n = x.length - 1;
+  const gx = x[n] - x[0];
+  const gz = z[n] - z[0];
+  for (let i = 0; i <= n; i++) {
+    x[i] -= (gx * i) / n;
+    z[i] -= (gz * i) / n;
+  }
+  return { x, z };
+}
+
+// Real road centreline ([distM, lat, lon, …] every ~20 m) resampled every
+// STEP_M and stretched to the profile's length; also returns lat/lon so a
+// ride's GPS track follows the real road.
+export function pathFromGeometry(points, lengthM) {
+  const geomLength = points.at(-1)[0];
+  const n = Math.round(lengthM / STEP_M) + 1;
+  const lat = new Float64Array(n);
+  const lon = new Float64Array(n);
+  let j = 0;
+  for (let i = 0; i < n; i++) {
+    const d = Math.min(geomLength, (i * STEP_M * geomLength) / lengthM);
+    while (j < points.length - 2 && points[j + 1][0] < d) j++;
+    const a = points[j];
+    const b = points[j + 1];
+    const t = b[0] > a[0] ? (d - a[0]) / (b[0] - a[0]) : 0;
+    lat[i] = a[1] + (b[1] - a[1]) * t;
+    lon[i] = a[2] + (b[2] - a[2]) * t;
+  }
+  const kx = (Math.PI / 180) * EARTH_R * Math.cos((lat[0] * Math.PI) / 180);
+  const kz = (Math.PI / 180) * EARTH_R;
+  const x = new Float64Array(n);
+  const z = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    x[i] = (lon[i] - lon[0]) * kx;
+    z[i] = (lat[i] - lat[0]) * kz;
+  }
+  return { x, z, lat, lon };
+}
+
+export function buildRoute(def, geometry = null) {
   const lengthM = def.lengthM ?? def.gradientsPct.length * def.resolutionM;
   const seed = hashString(def.id);
   let elevation = elevationFromGradients({ ...def, lengthM, seed, texture: def.texture ?? 0.6 });
@@ -297,13 +339,16 @@ export function buildRoute(def) {
     const drift = elevation[elevation.length - 1] - elevation[0];
     elevation = elevation.map((e, i) => e - (drift * i) / (elevation.length - 1));
   }
-  const path = def.loop ? loopPath({ lengthM, seed, wobble: def.wobble ?? 0.18 }) : pathFromTurns({ lengthM, turns: def.turns, seed, wander: def.wander ?? 1 });
+  let path;
+  if (geometry?.points?.length > 1) path = pathFromGeometry(geometry.points, lengthM);
+  else if (def.loop && def.turns?.length) path = closePath(pathFromTurns({ lengthM, turns: def.turns, seed, wander: def.wander ?? 0.35 }));
+  else if (def.loop) path = loopPath({ lengthM, seed, wobble: def.wobble ?? 0.18 });
+  else path = pathFromTurns({ lengthM, turns: def.turns, seed, wander: def.wander ?? 1 });
   return new Route({ ...def, lengthM, gradientsPct: undefined }, { elevation, ...path });
 }
 
 // ---------------------------------------------------------------- GPX
 
-const EARTH_R = 6371008.8;
 
 export function haversine(lat1, lon1, lat2, lon2) {
   const toRad = Math.PI / 180;

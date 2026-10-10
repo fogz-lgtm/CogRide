@@ -6,7 +6,7 @@ import { join, relative } from 'node:path';
 
 const ROOT = new URL('.', import.meta.url).pathname;
 const DIST = join(ROOT, 'dist');
-const INCLUDE = ['index.html', 'styles.css', 'manifest.webmanifest', 'icon.svg', 'icons', 'js', 'vendor', 'sw.js'];
+const INCLUDE = ['index.html', 'styles.css', 'manifest.webmanifest', 'icon.svg', 'icons', 'js', 'vendor', 'data', 'fonts', 'sw.js'];
 
 const build = (process.env.GITHUB_SHA || '').slice(0, 7) || new Date().toISOString().replace(/\D/g, '').slice(0, 12);
 
