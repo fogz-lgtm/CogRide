@@ -4,7 +4,7 @@
 // double-fire and jump several gears.
 
 export class Shifter {
-  constructor(onShift, { holdDelayMs = 550, repeatMs = 250, debounceMs = 80, now = () => Date.now(), setTimer = setTimeout, clearTimer = clearTimeout } = {}) {
+  constructor(onShift, { holdDelayMs = 550, repeatMs = 250, debounceMs = 80, now = () => Date.now(), setTimer = (fn, ms) => setTimeout(fn, ms), clearTimer = (t) => clearTimeout(t) } = {}) {
     this.onShift = onShift;
     this.holdDelayMs = holdDelayMs;
     this.repeatMs = repeatMs;

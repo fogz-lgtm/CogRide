@@ -175,6 +175,23 @@ export async function fetchAthleteProfile(opts) {
   };
 }
 
+// Recent activities of any kind (to notice a lifting session before a ride).
+export async function fetchRecentActivities({ afterS, perPage = 15 } = {}, opts) {
+  const q = new URLSearchParams({ per_page: String(perPage) });
+  if (afterS) q.set('after', String(Math.floor(afterS)));
+  const list = await api(`/athlete/activities?${q}`, opts);
+  return list.map((a) => ({
+    id: String(a.id),
+    name: a.name,
+    sportType: a.sport_type || a.type,
+    start: Date.parse(a.start_date),
+    elapsedS: a.elapsed_time || 0,
+  }));
+}
+
+const STRENGTH = ['WeightTraining', 'Workout', 'Crossfit', 'HighIntensityIntervalTraining'];
+export const isStrength = (a) => STRENGTH.includes(a.sportType);
+
 const RUN_LIKE = ['Run', 'TrailRun', 'Hike', 'Walk'];
 
 // Recent outdoor runs/hikes with real climbing, to ride as routes.
@@ -252,9 +269,16 @@ function fromBase64(text) {
 
 // Rides that couldn't upload (offline, Strava down) wait here for the next try.
 export function queueUpload(bytes, meta) {
-  const queue = read(QUEUE_KEY, []);
+  const queue = read(QUEUE_KEY, []).filter((item) => !meta?.externalId || item.meta?.externalId !== meta.externalId);
   queue.push({ fit: toBase64(bytes), meta, queuedAt: Date.now() });
   write(QUEUE_KEY, queue.slice(-10));
+}
+
+export function removeQueued(externalId) {
+  write(
+    QUEUE_KEY,
+    read(QUEUE_KEY, []).filter((item) => item.meta?.externalId !== externalId),
+  );
 }
 
 export function pendingUploads() {
