@@ -83,3 +83,11 @@ test('formatting: clocks, zones with hysteresis, short names', () => {
   assert.equal(latch.update(0.82), 2);
   assert.equal(shortName('Mont Ventoux (Bédoin)'), 'Mont Ventoux');
 });
+
+test('CogRide is the default app and keeps its storage keys', async () => {
+  const v = await import('../js/variant.js');
+  assert.equal(v.VARIANT, 'cog');
+  assert.equal(v.APP.name, 'CogRide');
+  assert.equal(v.APP.virtualGears, true);
+  assert.equal(v.storeKey('prefs'), 'cogride.prefs'); // unchanged, so nothing saved is lost
+});

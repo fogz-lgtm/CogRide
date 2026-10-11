@@ -1,7 +1,9 @@
 // Rider profile and app preferences, kept in this browser's localStorage.
 // Everything is SI inside; the units preference only changes what's shown.
 
-const KEY = 'cogride.prefs';
+import { APP, storeKey } from '../variant.js';
+
+const KEY = storeKey('prefs');
 
 export const HR_ZONES_DEFAULT = [
   { min: 0, max: 121 },
@@ -84,5 +86,6 @@ export function engineSettings(p) {
     difficulty: p.difficulty,
     ergStepPct: p.ergStepPct,
     fuelEveryMin: p.fuelEveryMin,
+    virtualGears: APP.virtualGears,
   };
 }

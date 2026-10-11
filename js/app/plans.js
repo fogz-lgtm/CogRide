@@ -3,6 +3,7 @@
 
 import { BUILT_IN_WORKOUTS, parseWorkoutText, totalDuration } from '../workouts.js';
 import { rampTestWorkout } from '../core/rampTest.js';
+import { APP } from '../variant.js';
 
 const PRESET_SOURCES = [
   {
@@ -122,7 +123,7 @@ export function tonightsPick({ recent = {}, liftedRecently = recent.liftedRecent
     kicker: `${when} · Zone 2 autopilot`,
     title: ['An hour in', 'the pocket.'],
     meta: '60 min · the trainer steers by your heart rate',
-    dek: 'An easy hour in Zone 2. You pedal; CogRide holds the watts.',
+    dek: `An easy hour in Zone 2. You pedal; ${APP.name} holds the watts.`,
   };
 }
 

@@ -48,9 +48,12 @@ export class RampFailureDetector {
     this.low = 0;
   }
 
-  update(cadence, rampStarted) {
+  update(cadence, rampStarted, { power = null, target = null } = {}) {
     if (!rampStarted) return false;
-    this.low = cadence != null && cadence < this.cadenceFloor ? this.low + 1 : 0;
+    // Without a cadence reading, a ramp you can no longer hold shows as power
+    // falling far below the target.
+    const failing = cadence != null ? cadence < this.cadenceFloor : power != null && target > 0 && power < 0.5 * target;
+    this.low = failing ? this.low + 1 : 0;
     return this.low >= this.seconds;
   }
 }

@@ -6,6 +6,7 @@
 const AUTH_URL = 'https://www.strava.com/oauth/authorize';
 const TOKEN_URL = 'https://www.strava.com/oauth/token';
 const API = 'https://www.strava.com/api/v3';
+// Shared by CogRide and FluxRide on one phone (same site): connect once.
 const KEY = 'cogride.strava';
 const STATE_KEY = 'cogride.strava.state';
 const QUEUE_KEY = 'cogride.strava.queue';
@@ -305,7 +306,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Upload a FIT file; resolves once Strava has processed it.
 export async function uploadFit(bytes, { name, description, externalId } = {}, { fetchImpl = globalThis.fetch, pollMs = 1500, timeoutMs = 60000 } = {}) {
   const form = new FormData();
-  form.append('file', new Blob([bytes], { type: 'application/octet-stream' }), `${externalId || 'cogride'}.fit`);
+  form.append('file', new Blob([bytes], { type: 'application/octet-stream' }), `${externalId || 'ride'}.fit`);
   form.append('data_type', 'fit');
   form.append('trainer', '1');
   if (name) form.append('name', name);

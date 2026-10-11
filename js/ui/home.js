@@ -10,6 +10,7 @@ import { sparkline } from '../core/routeLibrary.js';
 import { regionFor, timeOfDayNow } from '../world/themes.js';
 import { allWorkouts, autopilotPlan, dateline, greeting, tonightsPick, workoutPlan } from '../app/plans.js';
 import { totalDuration } from '../workouts.js';
+import { APP, isFlux, storeKey } from '../variant.js';
 
 const pad = (n) => String(n).padStart(2, '0');
 
@@ -40,12 +41,16 @@ function Tiles({ c, s }) {
           ? 'Virtual shifting'
           : trainer.path === 'ftms'
             ? 'Smart trainer (FTMS)'
-            : trainer.name
+            : trainer.path === 'fec'
+              ? 'Tacx · FE-C'
+              : trainer.name
       : trainer.state === 'connecting'
         ? 'Pedal to wake it'
         : noBle
           ? 'Open in Bluefy'
-          : 'KICKR Core · tap';
+          : isFlux
+            ? 'Flux S · tap'
+            : 'KICKR Core · tap';
   const clickLine = click.state === 'ready' ? (click.count === 2 ? 'Both pucks' : 'Ready') : null;
   const clickHint =
     click.state === 'ready'
@@ -60,7 +65,7 @@ function Tiles({ c, s }) {
           ? 'Open in Bluefy'
           : 'Tap, then press +';
   const hrHint = hr.state === 'ready' ? hr.name || 'Heart rate' : hr.state === 'connecting' ? 'Listening…' : 'Pace 3 · HR broadcast on';
-  return html`<div class="tiles">
+  return html`<div class=${`tiles ${APP.controllers ? '' : 'two'}`}>
     <${Tile}
       icon=${Icon.trainer}
       name="Trainer"
@@ -69,7 +74,8 @@ function Tiles({ c, s }) {
       label="Trainer"
       onClick=${() => (trainer.state === 'off' ? c.connectTrainer() : c.openSheet({ type: 'device', which: 'trainer' }))}
     />
-    <${Tile}
+    ${APP.controllers &&
+    html`<${Tile}
       icon=${Icon.click}
       name="Click"
       state=${click.state}
@@ -77,7 +83,7 @@ function Tiles({ c, s }) {
       hint=${clickHint}
       label="Zwift Click"
       onClick=${() => (click.state === 'off' || (click.v2 && click.count === 1) ? c.connectClick() : c.openSheet({ type: 'device', which: 'click' }))}
-    />
+    />`}
     <${Tile}
       icon=${Icon.heart}
       name="Heart"
@@ -218,7 +224,7 @@ function Week({ c, s }) {
 function Contents({ c, s }) {
   const [tab, setTab] = useState(() => {
     try {
-      return sessionStorage.getItem('cogride.tab') || 'routes';
+      return sessionStorage.getItem(storeKey('tab')) || 'routes';
     } catch {
       return 'routes';
     }
@@ -226,7 +232,7 @@ function Contents({ c, s }) {
   const choose = (t) => {
     setTab(t);
     try {
-      sessionStorage.setItem('cogride.tab', t);
+      sessionStorage.setItem(storeKey('tab'), t);
     } catch {
       // ignore
     }
@@ -309,7 +315,7 @@ export function Home({ c }) {
     <div class="scroll">
       <div class="home">
         <header class="masthead">
-          <span class="logo">CogRide</span>
+          <span class="logo">${APP.name}</span>
           <span class="right">
             ${s.strava.connected && (s.strava.needsReconnect || !s.strava.canUpload)
               ? html`<button class="chip warn" onClick=${() => c.openSheet({ type: 'settings', focus: 'strava' })}>Strava · sign in</button>`
@@ -334,7 +340,7 @@ export function Home({ c }) {
           <button class="chip" onClick=${() => fileInput('.gpx,application/gpx+xml', (t, n) => c.importGpx(t, n))}>Import GPX</button>
           <button class="chip" onClick=${() => c.openSheet({ type: 'editor' })}>Write a workout</button>
         </div>
-        <p class="colophon">Built for a KICKR Core with a Zwift Cog and Click, in Bluefy on iPhone. ${s.update ? html`<button class="linkish" onClick=${() => c.applyUpdate?.()}>Update ready — tap to load it.</button>` : ''}</p>
+        <p class="colophon">Built for ${APP.setup}, in Bluefy on iPhone. ${s.update ? html`<button class="linkish" onClick=${() => c.applyUpdate?.()}>Update ready — tap to load it.</button>` : ''}</p>
       </div>
     </div>
   </div>`;

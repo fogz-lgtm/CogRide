@@ -6,6 +6,10 @@ GitHub Pages, with no backend and no subscription.
 
 **App:** https://fogz-lgtm.github.io/CogRide/
 
+**FluxRide**, its sibling for a **Tacx Flux S** ridden with the bike's own
+gears (no Click): https://fogz-lgtm.github.io/CogRide/flux/ — see
+[FluxRide](#fluxride-tacx-flux-s) below.
+
 ## What it does
 
 - **Virtual shifting that feels like Zwift's.** 24 gears with Zwift's ratios,
@@ -85,6 +89,36 @@ simulated trainer and rider (↑/↓ shift, W/S changes how hard the pretend rid
 pushes). The `?sim&demo=route:alpe-dhuez&at=4200` URL jumps straight into a
 ride.
 
+## FluxRide (Tacx Flux S)
+
+FluxRide is the same app built for a different setup: a Tacx Flux S, the
+bike's real derailleur, and no controllers. Everything above works the same
+(climbs, workouts, Zone 2 autopilot, TV mode, Strava, ghosts, goals), with
+these differences:
+
+- **No virtual shifting.** You shift the bike. FluxRide sends the trainer the
+  road's grade (at your Trainer Difficulty) and works out your speed from
+  your power, as Zwift does. Where CogRide shows a gear, FluxRide shows the
+  grade and what the trainer is set to.
+- **Tacx's own protocol.** FluxRide steers the trainer over ANT+ FE-C sent
+  through Bluetooth, which every Flux S firmware supports, and falls back to
+  standard FTMS. It sends your weight so climbs feel right, and caps the
+  grade at the Flux S's 10 %.
+- **ERG and real gears.** The Flux S needs some wheel speed to hold the
+  watts. Ride ERG workouts in a middle gear; if the trainer reports it can't
+  hold the target, FluxRide tells you which way to shift.
+- **On-screen nudges.** Without a Click, tap the top or bottom half of the
+  ERG target (or the autopilot's heart-rate target) to nudge it.
+- **Its own app.** FluxRide has its own name, icon, settings and ride history.
+  Only the Strava connection is shared: connect in either app and both
+  upload.
+
+Set up on the iPhone the same way: open the FluxRide link in Bluefy, close
+the Tacx Training app and Zwift, then tap **Trainer** and **Heart**. If the
+trainer doesn't appear in the list, FluxRide offers a "Show every device"
+search. Try it without hardware at
+<https://fogz-lgtm.github.io/CogRide/flux/?sim>.
+
 ## Connect Strava (optional)
 
 Like OnPace, this works without a backend: you use your own Strava API
@@ -106,8 +140,9 @@ time the app opens.
 ## How this repo hosts the app
 
 Every push to `main` runs `.github/workflows/deploy-pages.yml`. The workflow
-runs the tests, then `build.js` copies the app into `dist/` and stamps a build
-id into the service worker. The result is published to GitHub Pages. When a
+runs the tests, then `build.js` builds both apps from the same code, CogRide
+into `dist/` and FluxRide into `dist/flux/`, stamping each with its variant
+and a build id. The result is published to GitHub Pages. When a
 new version lands, Home offers it between rides, so the app never reloads
 mid-ride.
 
@@ -123,13 +158,17 @@ There's no bundler: the app is plain ES modules, with Preact + htm, three.js
 and the fonts vendored. Layout:
 
 - `js/core`: physics, gearing, routes, autopilot, ramp test, FIT
-- `js/devices`: Bluetooth, the Zwift protocol and Click, FTMS, HR, simulator
+- `js/devices`: Bluetooth, the Zwift protocol and Click, FTMS, Tacx FE-C, HR,
+  simulator
 - `js/engine`: the ride engine
 - `js/world`: the three.js world
 - `js/app`: the controller, preferences, plans and history
 - `js/ui`: the screens
+- `js/variant.js`: which app this is (CogRide or FluxRide); `variants/flux/`
+  holds FluxRide's name and icon
 
 `dev/world.html?route=alpe-dhuez&tod=dusk` previews the 3D world on its own.
+Add `?variant=flux` to any local URL to run FluxRide instead of CogRide.
 
 Route data: © OpenStreetMap contributors (ODbL); elevation from AWS Terrain
 Tiles. See `data/routes/ATTRIBUTION.md`.

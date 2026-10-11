@@ -343,6 +343,9 @@ select {
   gap: 8px;
   margin-top: 22px;
 }
+.tiles.two {
+  grid-template-columns: repeat(2, 1fr);
+}
 .tile {
   min-height: 128px;
   border-radius: 20px;

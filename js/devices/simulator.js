@@ -1,10 +1,12 @@
-// A pretend KICKR + rider for trying CogRide without hardware (and for tests).
+// A pretend trainer + rider for trying the app without hardware (and for tests).
 //
 // It accepts the same targets as SmartTrainer. In SIM mode it behaves like a
 // trainer with built-in virtual shifting: at cadence c in gear ratio R the
 // rider must make the power to ride the road at v = c/60 · R · 2.1 m. The
 // simulated rider aims for a steady effort, so shifting up first makes the
 // pedals heavier, then cadence settles lower, like the real thing.
+// With realGears (FluxRide) the pretend rider shifts the bike to hold that
+// effort, a little slower up steep grades.
 
 import { ratioFor, ZWIFT_CW, ZWIFT_CRR } from '../core/gearing.js';
 
@@ -30,14 +32,15 @@ export function cadenceForPower(watts, gearRatio, gradePct, massKg, min = 45, ma
 }
 
 export class SimulatedTrainer extends EventTarget {
-  constructor({ effortWatts = 150, intervalMs = 250, random = Math.random, autoStart = true } = {}) {
+  constructor({ effortWatts = 150, intervalMs = 250, random = Math.random, autoStart = true, realGears = false } = {}) {
     super();
     this.label = 'Trainer';
     this.name = 'Simulator';
     this.displayName = 'Simulator';
     this.state = 'disconnected';
     this.path = 'sim';
-    this.nativeShifting = true;
+    this.realGears = realGears;
+    this.nativeShifting = !realGears;
     this.effortWatts = effortWatts;
     this.intervalMs = intervalMs;
     this.random = random;
@@ -96,6 +99,10 @@ export class SimulatedTrainer extends EventTarget {
       this.cadence += (88 + noise(4) - this.cadence) * Math.min(1, dt * 1.2);
       this.power += ((t.watts ?? 0) - this.power) * Math.min(1, dt / 1.5);
       this.power += noise(6);
+    } else if (this.realGears) {
+      const grade = t.gradePct ?? 0;
+      this.cadence += (Math.max(62, 88 - Math.max(0, grade) * 2) + noise(3) - this.cadence) * Math.min(1, dt / 1.6);
+      this.power += (this.effortWatts - this.power) * Math.min(1, dt / 2) + noise(8);
     } else {
       const ratio = ratioFor(t.gear ?? 8);
       const grade = t.gradePct ?? 0;

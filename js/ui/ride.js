@@ -13,6 +13,11 @@ import { clock, countdown, POWER_ZONES, powerZone, stepZone, stepFraction, ZoneL
 import { zone2 } from '../app/prefs.js';
 import { ergHeadline, z2Headline, workPosition } from '../app/plans.js';
 import { TvMode } from './tv.js';
+import { APP } from '../variant.js';
+import { FLUX_S_MAX_GRADE } from '../devices/tacxTrainer.js';
+
+// What nudges an ERG target or autopilot: a Click, or a tap on the helm.
+const NUDGE = APP.controllers ? 'Click' : 'tap';
 
 const reduceMotion = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -161,7 +166,26 @@ function GearHelm({ c, snap, rail }) {
   </div>`;
 }
 
+// FluxRide: the bike's own gears, so instead of a gear the helm shows the
+// climb and what the trainer makes of it (Trainer Difficulty, its 10 % cap).
+function GradeHelm({ snap }) {
+  const grade = snap.grade ?? 0;
+  const felt = Math.min(FLUX_S_MAX_GRADE, snap.feltGrade ?? 0);
+  const capped = (snap.feltGrade ?? 0) > FLUX_S_MAX_GRADE;
+  return html`<div class="helm grade">
+    <div class="k">Grade</div>
+    <div class="erg"><span class="num">${grade.toFixed(1)}</span><span class="eu">%</span></div>
+    <div class="base">${Math.abs(grade) < 0.5 ? 'flat road' : `trainer ${felt.toFixed(1)} %${capped ? ' · its max' : ''}`}</div>
+  </div>`;
+}
+
+// The right-hand helm outside ERG: a gear, or the grade.
+function RoadHelm({ c, snap, rail }) {
+  return APP.virtualGears ? html`<${GearHelm} c=${c} snap=${snap} rail=${rail} />` : html`<${GradeHelm} snap=${snap} />`;
+}
+
 function RailPanel({ snap, rail }) {
+  if (!APP.virtualGears) return null;
   const notches = Array.from({ length: snap.gearCount }, (_, i) => i + 1);
   const atLimit = snap.gear === 1 || snap.gear === snap.gearCount;
   const cost = rail.cost;
@@ -183,7 +207,7 @@ function ErgHelm({ c, snap, ftp }) {
     <div class="k">ERG target</div>
     <div class="erg"><${RollNumber} value=${snap.ergTarget ?? '--'} rollKey=${snap.bias} /><span class="eu">W</span></div>
     <div class="halo"></div>
-    <div class="bias"><span class="chip" style=${biasPct && z ? { borderColor: z.color, color: 'var(--paper)' } : null}>${biasPct > 0 ? '+' : biasPct < 0 ? '−' : '±'}${Math.abs(biasPct)} % · Click</span></div>
+    <div class="bias"><span class="chip" style=${biasPct && z ? { borderColor: z.color, color: 'var(--paper)' } : null}>${biasPct > 0 ? '+' : biasPct < 0 ? '−' : '±'}${Math.abs(biasPct)} % · ${NUDGE}</span></div>
     <div class="base">base ${baseW ?? '--'} W · ${pct ?? '--'} %</div>
   </div>`;
 }
@@ -194,7 +218,7 @@ function HrHelm({ c, snap }) {
     <div class="k">Target bpm</div>
     <div class="erg"><${RollNumber} value=${ap?.targetHr ?? '--'} /></div>
     <div class="halo"></div>
-    <div class="ztitle">±2 per Click</div>
+    <div class="ztitle">±2 per ${NUDGE}</div>
   </div>`;
 }
 
@@ -337,7 +361,7 @@ function RoutePanel({ c, snap, route, prefs, facts, rail, goalM }) {
     <${ProfileRow} route=${route} snap=${snap} facts=${facts} units=${units} goalM=${goalM} />
     <div class="duo">
       <${PowerHero} snap=${snap} ftp=${prefs.ftp} dimBar=${rail.show} />
-      ${snap.mode === 'erg' ? html`<${ErgHelm} c=${c} snap=${snap} ftp=${prefs.ftp} />` : html`<${GearHelm} c=${c} snap=${snap} rail=${rail} />`}
+      ${snap.mode === 'erg' ? html`<${ErgHelm} c=${c} snap=${snap} ftp=${prefs.ftp} />` : html`<${RoadHelm} c=${c} snap=${snap} rail=${rail} />`}
       <${RailPanel} snap=${snap} rail=${rail} />
     </div>
     <${Trio} items=${[hrItem(snap), { k: 'Cadence', v: snap.cadence || '--', u: 'rpm' }, { k: 'Speed', v: sp.value, u: sp.unit }]} />
@@ -369,7 +393,7 @@ function ErgPanel({ c, snap, plan, prefs, rail }) {
         <div class="ivbar"><i style=${{ width: `${step ? Math.min(100, (elapsed / step.duration) * 100) : 0}%`, background: zone?.color ?? 'var(--paper-3)' }}></i></div>
         <div class="ivkick"><span class="k">${clock(elapsed)} done</span><span class="k">${step ? clock(step.duration) : ''}</span></div>
       </div>
-      ${erg ? html`<${ErgHelm} c=${c} snap=${snap} ftp=${prefs.ftp} />` : html`<${GearHelm} c=${c} snap=${snap} rail=${rail} />`}
+      ${erg ? html`<${ErgHelm} c=${c} snap=${snap} ftp=${prefs.ftp} />` : html`<${RoadHelm} c=${c} snap=${snap} rail=${rail} />`}
       ${!erg && html`<${RailPanel} snap=${snap} rail=${rail} />`}
     </div>
     <div class="nextline">

@@ -1,9 +1,11 @@
 // Ride history (summaries only) and a rolling checkpoint of the ride in
 // progress, so a reload or a crash in the middle of a ride loses nothing.
 
-const HISTORY_KEY = 'cogride.history';
-const CHECKPOINT_KEY = 'cogride.checkpoint';
-const WORKOUTS_KEY = 'cogride.workouts';
+import { storeKey } from '../variant.js';
+
+const HISTORY_KEY = storeKey('history');
+const CHECKPOINT_KEY = storeKey('checkpoint');
+const WORKOUTS_KEY = storeKey('workouts');
 
 function storage() {
   try {
@@ -87,8 +89,8 @@ export function saveCustomWorkouts(list) {
 
 // ---------------------------------------------------------------- bests
 
-const BESTS_KEY = 'cogride.bests';
-const POWER_KEY = 'cogride.powerBests';
+const BESTS_KEY = storeKey('bests');
+const POWER_KEY = storeKey('powerBests');
 
 // Your best time over each road: { [routeId]: { timeS, splits, at } }.
 export function loadBest(routeId) {

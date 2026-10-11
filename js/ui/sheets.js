@@ -14,6 +14,7 @@ import { totalDuration } from '../workouts.js';
 import { estimateTss } from './home.js';
 import { parseWeight } from '../core/units.js';
 import { redirectUri } from '../services/strava.js';
+import { APP, isFlux } from '../variant.js';
 
 const Seg = ({ value, options, onChange }) => html`<div class="seg">${options.map(([v, label]) => html`<button class=${v === value ? 'on' : ''} onClick=${() => onChange(v)}>${label}</button>`)}</div>`;
 const Toggle = ({ on, onChange, label }) => html`<button class=${`toggle ${on ? 'on' : ''}`} role="switch" aria-checked=${on} aria-label=${label} onClick=${() => onChange(!on)}></button>`;
@@ -118,7 +119,7 @@ export function PlanSheet({ c, s, sheet }) {
     const z = s.prefs.hrZones[1];
     figure = html`<${Scene} region="bayarea" tod=${tod} seed="z2" w=${366} h=${150} />`;
     title = ['Zone 2', 'autopilot'];
-    sub = `You pedal; CogRide holds the watts and nudges them so your heart stays between ${z.min} and ${z.max} bpm — easing off as you drift. A Click moves the target 2 bpm.`;
+    sub = `You pedal; ${APP.name} holds the watts and nudges them so your heart stays between ${z.min} and ${z.max} bpm — easing off as you drift. ${APP.controllers ? 'A Click moves' : 'Tapping the target moves'} the target 2 bpm.`;
     stats = [
       ['Band', `${z.min}–${z.max}`, 'bpm'],
       ['Starts', Math.round(prefs.ftp * 0.55), 'W'],
@@ -197,7 +198,7 @@ export function PauseSheet({ c, s }) {
       <div><div class="k">Climbed</div><div class="num">${climb.value}<span class="u">${climb.unit}</span></div></div>
     </div>
     <button class="btn pri" onClick=${() => c.resume()}>${Icon.play()} Resume</button>
-    <p class="or">or hold + and − on the Click together</p>
+    ${APP.controllers && html`<p class="or">or hold + and − on the Click together</p>`}
     <div class="btnrow">
       <button class="btn sec" onClick=${() => c.finish()}>End & save</button>
       <button class="btn sec" onClick=${() => (c.resume(), c.setTv(!s.tv))}>${s.tv ? 'Leave TV mode' : 'TV mode'}</button>
@@ -206,7 +207,7 @@ export function PauseSheet({ c, s }) {
       <${Row} title="Fuel reminders" sub=${s.prefs.fuelEveryMin ? `Every ${s.prefs.fuelEveryMin} min` : 'Off'}>
         <${Toggle} label="Fuel reminders" on=${!!s.prefs.fuelEveryMin} onChange=${(on) => c.setPrefs({ fuelEveryMin: on ? 45 : 0 })} />
       <//>
-      <${Row} title="Sounds" sub="Shift ticks and interval cues">
+      <${Row} title="Sounds" sub=${APP.virtualGears ? 'Shift ticks and interval cues' : 'Interval cues'}>
         <${Toggle} label="Sounds" on=${s.prefs.sound !== 'off'} onChange=${(on) => c.setPrefs({ sound: on ? 'normal' : 'off' })} />
       <//>
     </div>
@@ -325,13 +326,14 @@ export function SettingsSheet({ c, s }) {
     <div class="section">
       <div class="k">Riding</div>
       <${Row} title="Units"><${Seg} value=${units} options=${[['imperial', 'mi · ft'], ['metric', 'km · m']]} onChange=${(v) => c.setPrefs({ units: v })} /><//>
-      <${Row} title="Trainer difficulty" sub="How much of the road’s slope you feel. Zwift’s default is 50 %.">
+      <${Row} title="Trainer difficulty" sub=${`How much of the road’s slope you feel. Zwift’s default is 50 %.${isFlux ? ' The Flux S tops out at 10 %.' : ''}`}>
         <${Seg} value=${p.difficulty} options=${[[0.25, '25'], [0.5, '50'], [0.75, '75'], [1, '100']]} onChange=${(v) => c.setPrefs({ difficulty: v })} />
       <//>
-      <${Row} title="Gears" sub=${p.gearTable === 'climbing' ? 'Closer, easier steps for long climbs (top gear 4.2)' : 'Zwift’s 24 gears'}>
+      ${APP.virtualGears &&
+      html`<${Row} title="Gears" sub=${p.gearTable === 'climbing' ? 'Closer, easier steps for long climbs (top gear 4.2)' : 'Zwift’s 24 gears'}>
         <${Seg} value=${p.gearTable || 'zwift'} options=${[['zwift', 'Zwift'], ['climbing', 'Climbing']]} onChange=${(v) => c.setPrefs({ gearTable: v })} />
-      <//>
-      <${Row} title="ERG Click step" sub="Each Click nudges the target"><${Seg} value=${p.ergStepPct} options=${[[0.01, '1 %'], [0.02, '2 %']]} onChange=${(v) => c.setPrefs({ ergStepPct: v })} /><//>
+      <//>`}
+      <${Row} title=${APP.controllers ? 'ERG Click step' : 'ERG step'} sub=${APP.controllers ? 'Each Click nudges the target' : 'Each tap on the target nudges it'}><${Seg} value=${p.ergStepPct} options=${[[0.01, '1 %'], [0.02, '2 %']]} onChange=${(v) => c.setPrefs({ ergStepPct: v })} /><//>
       <${Row} title="Fuel reminders"><${Seg} value=${p.fuelEveryMin} options=${[[0, 'Off'], [30, '30'], [45, '45'], [60, '60']]} onChange=${(v) => c.setPrefs({ fuelEveryMin: v })} /><//>
       <${Row} title="Sounds"><${Seg} value=${p.sound} options=${[['normal', 'Normal'], ['quiet', 'Quiet'], ['off', 'Off']]} onChange=${(v) => c.setPrefs({ sound: v })} /><//>
       <${Row} title="Cues in TV mode" sub="Mix under your show; ring switch must be on"><${Toggle} label="Cues in TV mode" on=${p.tvSound !== 'off'} onChange=${(on) => c.setPrefs({ tvSound: on ? 'on' : 'off' })} /><//>
@@ -362,10 +364,13 @@ export function SettingsSheet({ c, s }) {
 
     <div class="section">
       <div class="k">Devices</div>
-      <div class="note-card"><b>Wahoo KICKR Core + Zwift Cog</b>Close Zwift and the Wahoo app first — only one app can steer the trainer. CogRide shifts with the trainer’s own virtual shifting, like Zwift does; on older firmware it shifts in software instead.</div>
-      <div class="note-card"><b>Zwift Click</b>Tap the Click tile, then press a button so it shows up. A Click v2 is two pucks: connect each one. If the left puck locks itself, the right puck still shifts both ways: + is harder, B is easier.</div>
-      <div class="note-card"><b>Coros Pace 3</b>On the watch: Settings › Heart Rate Broadcast › On. It talks to one app at a time, and not while it has sensors paired. CogRide records the ride, so don’t also save one on the watch (or you’ll get two on Strava).</div>
-      <div class="note-card"><b>Keep the screen on</b>CogRide asks iOS to keep the screen awake while you ride. If it dims anyway, set Settings › Display › Auto-Lock to Never for your rides.</div>
+      ${isFlux
+        ? html`<div class="note-card"><b>Tacx Flux S</b>Close the Tacx Training app and Zwift first — the trainer takes orders from one app at a time. FluxRide sets the climb and you shift with your bike’s own gears, like riding outside. The Flux S simulates up to 10 %.</div>
+            <div class="note-card"><b>Gears in ERG workouts</b>ERG holds the watts whatever gear you’re in, but the Flux S needs some wheel speed to do it. Sit in a middle gear (big ring, middle of the cassette) and leave it there. If the trainer can’t hold the target, FluxRide tells you which way to shift.</div>`
+        : html`<div class="note-card"><b>Wahoo KICKR Core + Zwift Cog</b>Close Zwift and the Wahoo app first — only one app can steer the trainer. CogRide shifts with the trainer’s own virtual shifting, like Zwift does; on older firmware it shifts in software instead.</div>
+            <div class="note-card"><b>Zwift Click</b>Tap the Click tile, then press a button so it shows up. A Click v2 is two pucks: connect each one. If the left puck locks itself, the right puck still shifts both ways: + is harder, B is easier.</div>`}
+      <div class="note-card"><b>Coros Pace 3</b>On the watch: Settings › Heart Rate Broadcast › On. It talks to one app at a time, and not while it has sensors paired. ${APP.name} records the ride, so don’t also save one on the watch (or you’ll get two on Strava).</div>
+      <div class="note-card"><b>Keep the screen on</b>${APP.name} asks iOS to keep the screen awake while you ride. If it dims anyway, set Settings › Display › Auto-Lock to Never for your rides.</div>
       <div class="btnrow">
         <button class="btn sec small" onClick=${() => (c.useSimulator(), c.closeSheet())}>Use the simulator</button>
         <button class="btn sec small" onClick=${() => (c.disconnectTrainer(), c.disconnectClicks(), c.disconnectHeart())}>Disconnect all</button>
@@ -381,13 +386,23 @@ export function SettingsSheet({ c, s }) {
 
 // ---------------------------------------------------------------- devices
 
+function trainerLine(d) {
+  if (d.sim) {
+    return isFlux
+      ? 'The simulator: a pretend Flux S and rider, for trying FluxRide without hardware. W/S changes how hard the pretend rider pushes.'
+      : 'The simulator: a pretend KICKR and rider, for trying CogRide without hardware. ↑/↓ shift, W/S changes how hard the pretend rider pushes.';
+  }
+  if (isFlux) return `${d.name} — ${d.path === 'fec' ? 'Tacx’s own control (FE-C)' : 'standard smart-trainer control (FTMS)'}. You shift with the bike; FluxRide sets the climb.`;
+  return d.path === 'zwift' ? `${d.name} — using the trainer’s own virtual shifting (Zwift protocol).` : `${d.name} — standard smart-trainer control (FTMS); gears are worked out in CogRide.`;
+}
+
 export function DeviceSheet({ c, s, which }) {
   const d = s.devices[which];
   if (which === 'trainer') {
     return html`<${Sheet} c=${c}>
       <${CloseBar} c=${c}><h2>Trainer <em>${d.state === 'ready' ? 'ready' : d.state}</em></h2><//>
-      <p class="sub">${d.sim ? 'The simulator: a pretend KICKR and rider, for trying CogRide without hardware. ↑/↓ shift, W/S changes how hard the pretend rider pushes.' : d.path === 'zwift' ? `${d.name} — using the trainer’s own virtual shifting (Zwift protocol).` : `${d.name} — standard smart-trainer control (FTMS); gears are worked out in CogRide.`}</p>
-      ${!d.sim && d.path === 'ftms' && html`<div class="note-card">
+      <p class="sub">${trainerLine(d)}</p>
+      ${!isFlux && !d.sim && d.path === 'ftms' && html`<div class="note-card">
         <b>Why not the trainer’s own virtual shifting?</b>
         ${
           {
@@ -470,6 +485,25 @@ export function ClickHelpSheet({ c }) {
       <button class="btn pri" onClick=${() => (c.closeSheet(), c.connectClick({ showAll: true }))}>Show every device</button>
     </div>
     <p class="sub small">“Show every device” lists everything nearby — pick “Zwift Click”. Still nothing? Check Settings › Bluefy › Bluetooth is on.</p>
+  <//>`;
+}
+
+// FluxRide: the trainer didn't show up in the Bluetooth list.
+export function TrainerHelpSheet({ c }) {
+  return html`<${Sheet} c=${c}>
+    <${CloseBar} c=${c}><h2>Can’t see <em>the trainer?</em></h2><//>
+    <div class="note-card">
+      <ol>
+        <li><b class="inl">Wake it.</b> The Flux S needs mains power: check it’s plugged in, then pedal a few strokes.</li>
+        <li><b class="inl">Free it.</b> It talks to one app at a time over Bluetooth. Swipe the Tacx Training app and Zwift closed (and quit them on any iPad, Apple TV or computer nearby).</li>
+        <li><b class="inl">Bluetooth on.</b> iOS Settings › Bluefy › Bluetooth must be allowed.</li>
+      </ol>
+    </div>
+    <div class="btnrow">
+      <button class="btn sec" onClick=${() => (c.closeSheet(), c.connectTrainer())}>Search again</button>
+      <button class="btn pri" onClick=${() => (c.closeSheet(), c.connectTrainer({ showAll: true }))}>Show every device</button>
+    </div>
+    <p class="sub small">“Show every device” lists everything nearby — pick the one whose name starts with “Tacx”.</p>
   <//>`;
 }
 

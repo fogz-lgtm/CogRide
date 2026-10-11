@@ -23,6 +23,7 @@ export const DEFAULT_SETTINGS = {
   difficulty: 0.5, // Zwift's Trainer Difficulty default
   ergStepPct: 0.01, // Zwift: one Click = ±1% FTP in ERG
   fuelEveryMin: 0,
+  virtualGears: true, // false: the bike's own gears (FluxRide); +/− only nudge ERG and autopilot
 };
 
 export class RideEngine extends EventTarget {
@@ -178,6 +179,8 @@ export class RideEngine extends EventTarget {
     } else if (this.mode === 'autopilot' && this.autopilot) {
       this.autopilot.nudgeTarget(direction * 2);
       this.emit('autopilot-target', { targetHr: this.autopilot.targetHr, direction });
+    } else if (!this.settings.virtualGears) {
+      return;
     } else {
       const next = clampGear(this.gear + direction);
       if (next === this.gear) {
@@ -338,7 +341,9 @@ export class RideEngine extends EventTarget {
   // you're back at target for 5 s, or at the next interval.
   updateBailout(dt, target) {
     const b = this.bailout;
-    const struggling = this.power < 0.3 * target || this.cadence < 40;
+    // Cadence counts only from a trainer that reports it.
+    const cadence = this.fresh(this.live.cadenceAt, 3000) ? this.live.cadence : null;
+    const struggling = this.power < 0.3 * target || (cadence != null && cadence < 40);
     if (!b.active) {
       b.low = struggling ? b.low + dt : 0;
       if (b.low > 3) {
@@ -347,7 +352,7 @@ export class RideEngine extends EventTarget {
         this.emit('bailout', { active: true });
       }
     } else {
-      b.recover = this.power >= 0.9 * target && this.cadence >= 50 ? b.recover + dt : 0;
+      b.recover = this.power >= 0.9 * target && (cadence == null || cadence >= 50) ? b.recover + dt : 0;
       if (b.recover >= 5) {
         b.active = false;
         b.low = 0;
@@ -372,6 +377,7 @@ export class RideEngine extends EventTarget {
       power: Math.round(avg3),
       powerInstant: this.power,
       cadence: Math.round(this.cadence),
+      hasCadence: this.fresh(this.live.cadenceAt, 3000),
       heartRate: this.heartRate,
       speed: this.physics.speed,
       tucked: this.physics.tucked,

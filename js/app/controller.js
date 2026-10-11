@@ -13,6 +13,7 @@ import * as history from './history.js';
 import { rideHeadline, rampPlan, workoutPlan } from './plans.js';
 import { RideEngine } from '../engine/rideEngine.js';
 import { SmartTrainer } from '../devices/smartTrainer.js';
+import { TacxTrainer } from '../devices/tacxTrainer.js';
 import { SimulatedTrainer } from '../devices/simulator.js';
 import { ZwiftClick } from '../devices/zwiftClick.js';
 import { HeartRateMonitor } from '../devices/heartRate.js';
@@ -31,6 +32,7 @@ import { summarize } from '../recorder.js';
 import { parseWorkoutText, parseZwo } from '../workouts.js';
 import * as strava from '../services/strava.js';
 import * as sound from '../ui/sound.js';
+import { APP, isFlux, storeKey } from '../variant.js';
 
 const TICK_MS = 250;
 const CHECKPOINT_S = 30;
@@ -188,7 +190,7 @@ export class Controller extends EventTarget {
 
   // Weight, FTP, units and HR zones from Strava (at most once a day).
   async refreshAthlete(force) {
-    const KEY = 'cogride.athleteAt';
+    const KEY = storeKey('athleteAt');
     try {
       if (!force && Date.now() - Number(localStorage.getItem(KEY) || 0) < 20 * 3600 * 1000) return;
     } catch {
@@ -284,9 +286,10 @@ export class Controller extends EventTarget {
     return err.message;
   }
 
-  async connectTrainer() {
+  // showAll (FluxRide): list every Bluetooth device, for when the trainer doesn't show up.
+  async connectTrainer({ showAll = false } = {}) {
     if (!bluetoothAvailable()) return this.openSheet({ type: 'bluefy' });
-    const t = new SmartTrainer();
+    const t = isFlux ? new TacxTrainer({ showAll }) : new SmartTrainer();
     // Keep a working trainer until the new one is actually connected
     // (a cancelled picker shouldn't drop it).
     const waking = (e) => e.detail.state === 'connecting' && this.setDevice('trainer', { state: 'connecting' });
@@ -301,11 +304,13 @@ export class Controller extends EventTarget {
       if (this.trainer?.connected) this.attachTrainer(this.trainer, { refresh: true });
       else this.setDevice('trainer', { state: 'off', message: msg || '' });
       if (msg) this.toast({ title: 'Trainer didn’t connect', body: msg });
+      // Nothing picked (or nothing listed): help find it.
+      else if (isFlux && !this.trainer?.connected) this.openSheet({ type: 'trainerhelp' });
     }
   }
 
   useSimulator() {
-    const sim = new SimulatedTrainer({ effortWatts: Math.round(this.state.prefs.ftp * 0.72) });
+    const sim = new SimulatedTrainer({ effortWatts: Math.round(this.state.prefs.ftp * 0.72), realGears: !APP.virtualGears });
     this.attachTrainer(sim);
     sim.connect();
   }
@@ -334,6 +339,14 @@ export class Controller extends EventTarget {
     t.addEventListener('status', update);
     t.addEventListener('path', update);
     t.addEventListener('warning', (e) => this.toast({ title: 'Trainer', body: e.detail.message, ms: 8000 }));
+    // Real gears in ERG: the brake needs the right wheel speed.
+    t.addEventListener('gear-hint', (e) =>
+      this.toast(
+        e.detail.direction > 0
+          ? { title: 'Shift to a harder gear', body: 'The trainer can’t hold the target at this wheel speed. A bigger gear lets it.', ms: 7000 }
+          : { title: 'Shift to an easier gear', body: 'You’re spinning the trainer too fast to hold the target this low.', ms: 7000 },
+      ),
+    );
     update();
   }
 
@@ -744,7 +757,7 @@ export class Controller extends EventTarget {
     const merged = mergePowerBests(history.loadPowerBests(), curve, startedAt);
     history.savePowerBests(merged.next);
     const fit = encodeActivity(samples, { summary, ftp: prefs.ftp });
-    const id = `cogride-${startedAt}`;
+    const id = `${APP.storage}-${startedAt}`;
     const name = activityName(plan, route, minutes);
     const description = activityDescription({ plan, route, climbedM, zoneShare, rampFtp, prefs });
     const entry = {
@@ -993,7 +1006,7 @@ export class Controller extends EventTarget {
     // Ramp test: over when the cadence collapses after the ramp has begun.
     if (this.rampDetector && this.rampFtp == null && snap.workout) {
       const rampStarted = snap.workout.clock > 300;
-      if (this.rampDetector.update(snap.cadence, rampStarted)) {
+      if (this.rampDetector.update(snap.hasCadence ? snap.cadence : null, rampStarted, { power: snap.powerInstant, target: snap.ergTarget })) {
         this.rampFtp = ftpFromRamp(this.engine.samples.map((x) => x.power ?? 0));
         const ftp = this.state.prefs.ftp;
         this.engine.setWorkout({ id: 'cool', name: 'Cool down', steps: [{ type: 'steady', duration: 600, power: Math.min(0.5, 100 / ftp), label: 'Cool down' }] });
@@ -1279,14 +1292,14 @@ function mmss(seconds) {
 }
 
 export function activityName(plan, route, minutes) {
-  if (!plan) return route ? `${route.name} · CogRide` : 'CogRide ride';
+  if (!plan) return route ? `${route.name} · ${APP.name}` : `${APP.name} ride`;
   if (plan.kind === 'autopilot') return `Zone 2 autopilot · ${minutes} min`;
   if (plan.kind === 'ramp') return 'FTP ramp test';
   if (plan.kind === 'workout') return `${plan.title}${route ? ` · ${route.name}` : ''}`;
   if (plan.kind === 'run') return `${route?.name ?? plan.title} (ridden)`;
   if (plan.kind === 'segment') return `${route?.name ?? plan.title} (segment, ridden)`;
   if (plan.kind === 'vert') return `Climb goal · ${route?.name ?? ''}`.trim();
-  return route?.name ?? plan.title ?? 'CogRide ride';
+  return route?.name ?? plan.title ?? `${APP.name} ride`;
 }
 
 export function activityDescription({ plan, route, climbedM, zoneShare, rampFtp, prefs }) {
@@ -1298,6 +1311,6 @@ export function activityDescription({ plan, route, climbedM, zoneShare, rampFtp,
     parts.push(prefs.units === 'metric' ? `${Math.round(climbedM)} m climbed.` : `${ft} ft climbed.`);
   }
   if (route && !['route', 'run', 'gpx', 'segment', 'vert'].includes(plan?.kind)) parts.push(`Virtual road: ${route.name}.`);
-  parts.push('Ridden indoors with CogRide (virtual shifting, Zwift Cog + Click).');
+  parts.push(isFlux ? 'Ridden indoors with FluxRide on a Tacx Flux S.' : 'Ridden indoors with CogRide (virtual shifting, Zwift Cog + Click).');
   return parts.join(' ');
 }

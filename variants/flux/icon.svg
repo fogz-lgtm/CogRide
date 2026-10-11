@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#15120f"/>
+  <g transform="translate(256 256)" fill="none" stroke-linecap="round">
+    <circle r="168" stroke="#f3ebdd" stroke-width="10" opacity="0.3"/>
+    <circle r="134" stroke="#f3ebdd" stroke-width="10" opacity="0.55"/>
+    <path d="M-57.5 -157.9A168 168 0 0 1 157.9 -57.5" stroke="#f3ebdd" stroke-width="22"/>
+    <path d="M-148.3 -78.9A168 168 0 0 1 -98.7 -135.9" stroke="#f3ebdd" stroke-width="10" opacity="0.55"/>
+    <rect x="-4" y="-120" width="8" height="40" rx="4" fill="#f3ebdd" opacity="0.3" transform="rotate(0)"/><rect x="-4" y="-120" width="8" height="40" rx="4" fill="#f3ebdd" opacity="0.3" transform="rotate(45)"/><rect x="-4" y="-120" width="8" height="40" rx="4" fill="#f3ebdd" opacity="0.3" transform="rotate(90)"/><rect x="-4" y="-120" width="8" height="40" rx="4" fill="#f3ebdd" opacity="0.3" transform="rotate(135)"/><rect x="-4" y="-120" width="8" height="40" rx="4" fill="#f3ebdd" opacity="0.3" transform="rotate(180)"/><rect x="-4" y="-120" width="8" height="40" rx="4" fill="#f3ebdd" opacity="0.3" transform="rotate(225)"/><rect x="-4" y="-120" width="8" height="40" rx="4" fill="#f3ebdd" opacity="0.3" transform="rotate(270)"/><rect x="-4" y="-120" width="8" height="40" rx="4" fill="#f3ebdd" opacity="0.3" transform="rotate(315)"/>
+    <circle r="54" fill="#f3ebdd" stroke="none"/>
+    <circle r="22" fill="#15120f" stroke="none"/>
+  </g>
+</svg>

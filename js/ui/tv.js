@@ -11,6 +11,7 @@ import { zone2 } from '../app/prefs.js';
 import { workPosition } from '../app/plans.js';
 import { ElevationStrip, WorkoutProfile, Trace } from './charts.js';
 import { ambientAudioSupported } from './sound.js';
+import { APP } from '../variant.js';
 
 // T0 flood (1.6 s) → rim (to T+10 s) → off.
 function useFlood(c) {
@@ -75,6 +76,9 @@ function RoadLine({ route, snap, units }) {
 
 const N = ({ k, v, u, cls = 'num', style, kstyle }) => html`<div><div class="k" style=${kstyle}>${k}</div><div class=${cls} style=${style}>${v}${u && html`<span class="u">${u}</span>`}</div></div>`;
 
+// The gear (virtual shifting) or, on the bike's own gears, the grade.
+const roadNumber = (snap) => (APP.virtualGears ? html`<${N} k="Gear" v=${snap.gear} cls="snum" />` : html`<${N} k="Grade" v=${(snap.grade ?? 0).toFixed(1)} u="%" />`);
+
 export function TvMode({ c, s, snap, mode, race = null }) {
   const flood = useFlood(c);
   const { prefs, plan, route } = s;
@@ -95,7 +99,7 @@ export function TvMode({ c, s, snap, mode, race = null }) {
       html`<${Pulse} tick=${flood.tick}><${N} k=${w?.step ? `Time left${zone ? ` · Z${zone.n} ${zone.name}` : ''}` : 'Time'} v=${w?.step ? countdown(w.stepRemaining) : clock(snap.movingTime)} cls="num countdown" style=${cdColor ? { '--cd': cdColor } : null} kstyle=${zone ? { color: zone.color } : null} /><//>`,
     ];
     row2 = [
-      snap.mode === 'erg' ? html`<${N} k="Target" v=${snap.ergTarget ?? '--'} u="W" />` : html`<${N} k="Gear" v=${snap.gear} cls="snum" />`,
+      snap.mode === 'erg' ? html`<${N} k="Target" v=${snap.ergTarget ?? '--'} u="W" />` : roadNumber(snap),
       html`<${N} k="Power" v=${snap.power} u="W" />`,
       html`<${N} k="Heart" v=${snap.heartRate ?? '--'} u="bpm" />`,
     ];
@@ -111,7 +115,7 @@ export function TvMode({ c, s, snap, mode, race = null }) {
     ctx = [`Zone 2 · ${z.min}–${z.max} bpm`, `${clock(snap.movingTime)} of ${plan.minutes}:00`];
     progress = snap.movingTime / (plan.minutes * 60);
   } else {
-    row1 = [html`<${N} k="Gear" v=${snap.gear} cls="snum" />`, html`<${N} k="Power" v=${snap.power} u="W" />`];
+    row1 = [roadNumber(snap), html`<${N} k="Power" v=${snap.power} u="W" />`];
     row2 = [html`<${N} k="Heart" v=${snap.heartRate ?? '--'} u="bpm" />`, html`<${N} k="Cadence" v=${snap.cadence || '--'} u="rpm" />`];
     const d = U.distance(snap.distance, units);
     const climb = U.elevation(snap.climbed, units);
@@ -134,13 +138,13 @@ export function TvMode({ c, s, snap, mode, race = null }) {
               <div class="steps">
                 <div><i>1</i><b>Play a show</b><span>in any app with Picture in Picture</span></div>
                 <div><i>2</i><b>Swipe home</b><span>it shrinks to a floating window</span></div>
-                <div><i>3</i><b>Come back</b><span>drag it here — CogRide keeps your trainer talking</span></div>
+                <div><i>3</i><b>Come back</b><span>drag it here — the app keeps your trainer talking</span></div>
               </div>
               <button class="btn sec small gotit" onClick=${() => c.setPrefs({ tvIntroSeen: true })}>Got it</button>
             </div>`
           : html`<div class="label">${Icon.pip()}<br />Your show<span class="k">Picture in Picture</span></div>`}
       </div>
-      <div class="hint">${intro ? 'Ring switch on to hear interval cues.' : 'Park your show here — CogRide keeps the trainer talking.'}</div>
+      <div class="hint">${intro ? 'Ring switch on to hear interval cues.' : 'Park your show here — the trainer stays connected.'}</div>
       ${flood.phase === 'flood' &&
       html`<div class="go"><em>Go.</em><span>${pos?.workIndex ? `Interval ${pos.workIndex} of ${pos.workCount}` : flood.step?.label || 'Next'}<br />${fz ? `${fz.name} · Z${fz.n}` : ''}</span></div>`}
     </div>
