@@ -91,3 +91,18 @@ test('CogRide is the default app and keeps its storage keys', async () => {
   assert.equal(v.APP.virtualGears, true);
   assert.equal(v.storeKey('prefs'), 'cogride.prefs'); // unchanged, so nothing saved is lost
 });
+
+test('TV mode parks the show where iOS puts its largest Picture in Picture window', async () => {
+  const { pipBox } = await import('../js/ui/pip.js');
+  // Measured on an iPhone (430 × 932 pt) in Bluefy: a 404 × 227 window,
+  // across the top in portrait; top right in landscape, overhanging the page.
+  const portrait = pipBox({ screenW: 430, screenH: 932, innerW: 430, innerH: 840 });
+  assert.deepEqual(portrait, { landscape: false, w: 404, h: 227, x: 13 });
+  const landscape = pipBox({ screenW: 430, screenH: 932, innerW: 829, innerH: 408 });
+  assert.equal(landscape.landscape, true);
+  assert.equal(landscape.w, 404);
+  assert.ok(Math.abs(landscape.x - 453) <= 1, `x ${landscape.x}`);
+  // A computer: numbers keep a fair share of the width.
+  const desktop = pipBox({ screenW: 1920, screenH: 1080, innerW: 1280, innerH: 720 });
+  assert.ok(desktop.x >= 1280 * 0.42 && desktop.x + 200 < 1280);
+});

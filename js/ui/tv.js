@@ -12,6 +12,7 @@ import { workPosition } from '../app/plans.js';
 import { ElevationStrip, WorkoutProfile, Trace } from './charts.js';
 import { ambientAudioSupported } from './sound.js';
 import { APP } from '../variant.js';
+import { pipBoxNow } from './pip.js';
 
 // T0 flood (1.6 s) → rim (to T+10 s) → off.
 function useFlood(c) {
@@ -37,6 +38,28 @@ function useFlood(c) {
     };
   }, [c]);
   return state;
+}
+
+// The show's window, re-measured when the phone turns.
+function usePipBox() {
+  const [box, setBox] = useState(pipBoxNow);
+  useEffect(() => {
+    let later = null;
+    const on = () => {
+      setBox(pipBoxNow());
+      // iOS settles the new size a moment after it says it turned.
+      clearTimeout(later);
+      later = setTimeout(() => setBox(pipBoxNow()), 350);
+    };
+    addEventListener('resize', on);
+    addEventListener('orientationchange', on);
+    return () => {
+      clearTimeout(later);
+      removeEventListener('resize', on);
+      removeEventListener('orientationchange', on);
+    };
+  }, []);
+  return box;
 }
 
 function Pulse({ tick, children }) {
@@ -81,6 +104,7 @@ const roadNumber = (snap) => (APP.virtualGears ? html`<${N} k="Gear" v=${snap.ge
 
 export function TvMode({ c, s, snap, mode, race = null }) {
   const flood = useFlood(c);
+  const pip = usePipBox();
   const { prefs, plan, route } = s;
   const units = prefs.units;
   const intro = !prefs.tvIntroSeen;
@@ -129,7 +153,7 @@ export function TvMode({ c, s, snap, mode, race = null }) {
   const pos = w && flood.index != null ? workPosition(c.engine.workout ?? plan.workout ?? { steps: [] }, flood.index) : null;
   const fz = stepZone(flood.step);
   const dockClass = `dock ${flood.phase === 'flood' ? 'flood' : flood.phase === 'rim' ? 'rim' : ''}`;
-  return html`<div class="screen tv">
+  return html`<div class="screen tv" style=${{ '--pipw': `${pip.w}px`, '--piph': `${pip.h}px`, '--pipx': `${pip.x}px` }}>
     <div class=${dockClass} style=${{ '--flood': flood.color || 'transparent' }}>
       <div class="frame">
         <span class="crop tl"></span><span class="crop tr"></span><span class="crop bl"></span><span class="crop br"></span>

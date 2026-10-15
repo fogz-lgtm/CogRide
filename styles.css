@@ -1384,13 +1384,20 @@ select {
 .tv {
   background: var(--ink-0);
   color: var(--paper-tv);
+  /* The show's window as iOS will place it (set from js/ui/pip.js): the
+     frame matches it exactly, and everything else fits around it. */
+  --pipw: calc(100vw - 26px);
+  --piph: calc(var(--pipw) * 9 / 16);
+  --pipx: 13px;
+  --pip-top: max(var(--safe-t), 2px);
+  --dock-h: calc(var(--pip-top) + var(--piph) + 64px);
 }
 .tv .dock {
   position: absolute;
   left: 0;
   right: 0;
   top: 0;
-  height: 42%;
+  height: var(--dock-h);
   background: #0b0907;
   box-shadow: inset 0 0 0 0 transparent;
   transition: background 800ms var(--ease-io), box-shadow 1000ms var(--ease-io);
@@ -1404,10 +1411,10 @@ select {
 }
 .tv .dock .frame {
   position: absolute;
-  left: 12px;
-  right: 12px;
-  top: calc(var(--top) + 12px);
-  bottom: 44px;
+  left: var(--pipx);
+  width: var(--pipw);
+  top: var(--pip-top);
+  height: var(--piph);
   border: 1.5px dashed rgba(243, 235, 221, 0.22);
   border-radius: 16px;
   display: grid;
@@ -1460,10 +1467,10 @@ select {
 }
 .tv .dock .hint {
   position: absolute;
-  left: 20px;
-  right: 20px;
-  bottom: 14px;
-  text-align: center;
+  left: var(--pipx);
+  right: 116px;
+  top: calc(var(--pip-top) + var(--piph) + 16px);
+  text-align: left;
   font: 400 italic 13px/1.3 var(--serif);
   color: var(--paper-4);
 }
@@ -1517,7 +1524,7 @@ select {
   position: absolute;
   left: calc(20 * var(--s));
   right: calc(20 * var(--s));
-  top: calc(42% + 18px);
+  top: calc(var(--dock-h) + 16px);
   bottom: calc(var(--safe-b) + 14px);
   display: flex;
   flex-direction: column;
@@ -1583,8 +1590,8 @@ select {
 }
 .tv .exit {
   position: absolute;
-  top: calc(var(--top) - 6px);
-  right: 10px;
+  top: calc(var(--pip-top) + var(--piph) + 8px);
+  right: var(--pipx);
   z-index: 3;
   display: flex;
   gap: 8px;
@@ -1592,13 +1599,23 @@ select {
 .tv .countdown {
   color: var(--cd, var(--paper-tv));
 }
+@media (orientation: portrait) {
+  /* Flush with the top of the page: no room for the top corner marks. */
+  .tv .dock .crop.tl,
+  .tv .dock .crop.tr {
+    display: none;
+  }
+}
 @media (orientation: landscape) {
+  .tv {
+    --pip-top: max(var(--safe-t), 18px);
+  }
   .tv .dock {
-    left: auto;
+    left: calc(var(--pipx) - 18px);
     right: 0;
     top: 0;
     bottom: 0;
-    width: 60%;
+    width: auto;
     height: auto;
   }
 }
@@ -2098,16 +2115,6 @@ select {
   font-size: calc(84 * var(--s));
   margin-top: calc(12 * var(--s));
 }
-.tv .exit {
-  top: auto;
-  bottom: calc(58% + 4px);
-  right: 12px;
-}
-.tv .dock .hint {
-  left: 20px;
-  right: 110px;
-  text-align: left;
-}
 .summary .zonek {
   white-space: normal;
   line-height: 1.4;
@@ -2164,30 +2171,25 @@ select {
 }
 
 /* ---------------------------------------------------------------- TV mode, landscape
-   The main way to ride: the show floats in the right 60 % (away from the
-   Dynamic Island); numbers sit in the left column; controls tuck under the
-   show so they never cover a number. */
+   The main way to ride: the show floats top right, where iOS parks it;
+   numbers fill everything to its left; controls tuck under the show so
+   they never cover a number. */
 @media (orientation: landscape) {
   .tv .dock .frame {
-    top: max(var(--safe-t), 14px);
-    bottom: 58px;
     left: 18px;
-    right: max(var(--safe-r), 18px);
+    /* The window can hang past the page's edge; the box stays on it. */
+    width: min(var(--pipw), calc(100vw - var(--pipx) - 10px));
   }
   .tv .dock .hint {
-    left: 22px;
-    right: 130px;
-    bottom: 20px;
+    left: 18px;
+    right: 120px;
   }
   .tv .exit {
-    top: auto;
-    bottom: max(var(--safe-b), 10px);
-    left: auto;
-    right: max(var(--safe-r), 16px);
+    right: max(var(--safe-r), 14px);
   }
   .tv .data {
     left: max(var(--safe-l), calc(20 * var(--s)));
-    right: calc(60% + 18px);
+    right: calc(100% - var(--pipx) + 30px);
     top: max(var(--safe-t), calc(16 * var(--s)));
     bottom: max(var(--safe-b), calc(12 * var(--s)));
   }
@@ -2201,25 +2203,25 @@ select {
     padding-left: calc(16 * var(--s));
   }
   .tv .row1 .snum {
-    font-size: calc(80 * var(--s));
+    font-size: calc(92 * var(--s));
   }
   .tv .row1 .num {
-    font-size: calc(98 * var(--s));
+    font-size: calc(112 * var(--s));
   }
   .tv .row1.solo .num {
-    font-size: calc(122 * var(--s));
+    font-size: calc(136 * var(--s));
   }
   .tv .row2 {
     padding-top: calc(12 * var(--s));
   }
   .tv .row2 .num,
   .tv .row2 .snum {
-    font-size: calc(46 * var(--s));
+    font-size: calc(54 * var(--s));
     margin-top: calc(8 * var(--s));
   }
   .tv .row2.three .num,
   .tv .row2.three .snum {
-    font-size: calc(38 * var(--s));
+    font-size: calc(44 * var(--s));
   }
   .tv .row2 > div + div {
     padding-left: calc(12 * var(--s));
