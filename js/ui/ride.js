@@ -16,6 +16,9 @@ import { TvMode } from './tv.js';
 import { APP } from '../variant.js';
 import { FLUX_S_MAX_GRADE } from '../devices/tacxTrainer.js';
 
+// How much road the strip under the 3D view shows: about what's in sight.
+export const roadAhead = (units) => (units === 'metric' ? 3000 : 2 * 1609.344);
+
 // What nudges an ERG target or autopilot: a Click, or a tap on the helm.
 const NUDGE = APP.controllers ? 'Click' : 'tap';
 
@@ -440,6 +443,7 @@ function Z2Panel({ c, snap, plan, prefs }) {
       <div><div class="k">Trainer holding</div><${Num} v=${ap?.watts ?? snap.power} u="W" /></div>
       <div class="serif">${snap.state !== 'riding' ? 'Starts when you pedal' : delta < 0 ? `↓ easing ${-delta} W — ${why}` : delta > 0 ? `↑ adding ${delta} W — ${why}` : `Holding — ${why}`}</div>
     </div>
+    <div class="tracekey"><span class="hr">Heart rate</span><span class="pw">Power</span><span>last 20 min</span></div>
     <${Trace} samples=${samples} zone=${z} />
     <${Footer} snap=${snap} units=${prefs.units} />
   </div>`;
@@ -615,7 +619,7 @@ export function RideScreen({ c }) {
       <div class="grade num">${(Math.round(grade * 10) / 10).toFixed(1)}<span class="u">%</span><${Wedge} grade=${grade} /></div>
       <div class="elev"><div class="k lt">Elevation</div><div class="num">${elev.value}<span class="u">${elev.unit}</span></div></div>
     <//>
-    <div class="lprofile">${route && html`<${ElevationStrip} route=${route} distance=${snap.distance} units=${prefs.units} />`}</div>
+    <div class="lprofile">${route && html`<${ElevationStrip} route=${route} distance=${snap.distance} units=${prefs.units} ahead=${roadAhead(prefs.units)} />`}</div>
     ${mode === 'route' && html`<${RoutePanel} c=${c} snap=${snap} route=${route} prefs=${prefs} facts=${facts} rail=${rail} goalM=${plan.goalM} />`}
     ${mode === 'erg' && html`<${ErgPanel} c=${c} snap=${snap} plan=${plan} prefs=${prefs} rail=${rail} />`}
     ${mode === 'z2' && html`<${Z2Panel} c=${c} snap=${snap} plan=${plan} prefs=${prefs} />`}

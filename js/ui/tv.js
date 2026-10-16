@@ -93,9 +93,12 @@ function RoadLine({ route, snap, units }) {
   const grade = ((b.elevation - a.elevation) / 50) * 100;
   return html`<div class="tvroad">
     <div><div class="k">Grade</div><div class="num">${grade.toFixed(1)}<span class="u">%</span></div></div>
-    <${ElevationStrip} route=${route} distance=${snap.distance} units=${units} />
+    <${ElevationStrip} route=${route} distance=${snap.distance} units=${units} ahead=${units === 'metric' ? 3000 : 2 * 1609.344} />
   </div>`;
 }
+
+// The Zone 2 chart is heart rate and power over time — not the road.
+const TraceKey = () => html`<div class="tracekey"><span class="hr">Heart rate</span><span class="pw">Power</span><span>last 20 min</span></div>`;
 
 const N = ({ k, v, u, cls = 'num', style, kstyle }) => html`<div><div class="k" style=${kstyle}>${k}</div><div class=${cls} style=${style}>${v}${u && html`<span class="u">${u}</span>`}</div></div>`;
 
@@ -178,7 +181,7 @@ export function TvMode({ c, s, snap, mode, race = null }) {
     </div>
     <div class="data">
       <div class=${`row1 ${row1.length === 1 ? 'solo' : ''}`}>${row1}</div>
-      ${mode === 'z2' && html`<${Z2Mini} snap=${snap} prefs=${prefs} /><div class="tvprofile"><${Trace} samples=${c.engine.samples} zone=${zone2(prefs)} className="" /></div>`}
+      ${mode === 'z2' && html`<${Z2Mini} snap=${snap} prefs=${prefs} /><${TraceKey} /><div class="tvprofile"><${Trace} samples=${c.engine.samples} zone=${zone2(prefs)} className="" /></div>`}
       ${mode === 'erg' && (c.engine.workout ?? plan.workout) && html`<div class="tvprofile"><${WorkoutProfile} workout=${c.engine.workout ?? plan.workout} clock=${w?.clock ?? 0} className="" /></div>`}
       ${mode === 'route' && route && html`<${RoadLine} route=${route} snap=${snap} units=${units} />`}
       <div class=${`row2 ${row2.length === 3 ? 'three' : ''}`}>${row2}</div>

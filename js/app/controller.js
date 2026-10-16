@@ -536,9 +536,18 @@ export class Controller extends EventTarget {
       sound.playChime();
       this.toast({ title: 'Workout done.', body: 'Keep riding, or pause to end and save.', ms: 9000 });
     });
-    on('bailout', (d) =>
-      this.toast(d.active ? { title: 'ERG paused', body: 'Pedal back up to the target and it picks up again.' } : { title: 'ERG back on', body: 'Holding your target again.', ms: 3000 }),
-    );
+    on('bailout', (d) => {
+      const auto = this.state.plan?.kind === 'autopilot';
+      if (d.active) {
+        this.toast(
+          auto
+            ? { title: 'Easing off', body: 'Your cadence dropped, so the trainer let go. Spin back up — the autopilot comes back 10 % lighter.', ms: 7000 }
+            : { title: 'ERG paused', body: 'Your cadence dropped, so the trainer let go. Spin back up and it builds back to the target.', ms: 7000 },
+        );
+      } else {
+        this.toast({ title: auto ? 'Autopilot back on' : 'ERG back on', body: 'Building back up over 15 seconds.', ms: 3000 });
+      }
+    });
     on('summit', (d) => {
       this.summited = true;
       sound.playChime();
@@ -1022,6 +1031,17 @@ export class Controller extends EventTarget {
       if (this.drift.out >= 20 && snap.movingTime - this.drift.lastBell > 120 && snap.movingTime > 300) {
         this.drift.lastBell = snap.movingTime;
         sound.playBell();
+      }
+    }
+    // At the top of Zone 2 power with heart rate still low: say why, once.
+    if (plan?.kind === 'autopilot' && snap.autopilot?.capped) {
+      this.drift.capped = (this.drift.capped ?? 0) + 1;
+      if (this.drift.capped === 120) {
+        this.toast({
+          title: `Holding ${snap.autopilot.watts} W, the top of Zone 2`,
+          body: 'Your heart rate is low for these watts — common on a bike, especially when your zones come from running. If it happens every ride, lower your Zone 2 band in Settings.',
+          ms: 12000,
+        });
       }
     }
     // Climb goal reached.

@@ -62,6 +62,7 @@ export class RideEngine extends EventTarget {
     this.live = { power: 0, powerAt: -Infinity, cadence: 0, cadenceAt: -Infinity, hr: null, hrAt: -Infinity, trainerHr: null, trainerHrAt: -Infinity };
     this.powerHistory = [];
     this.bailout = { active: false, low: 0, recover: 0 };
+    this.ergRamp = null;
     this.lastStepIndex = -1;
     this.lastCountdown = null;
     this.workoutDone = false;
@@ -121,6 +122,7 @@ export class RideEngine extends EventTarget {
     this.workoutDone = false;
     this.bias = 0;
     this.bailout = { active: false, low: 0, recover: 0 };
+    this.ergRamp = null;
   }
 
   // { targetHr, zoneMin, zoneMax, startWatts, minWatts, maxWatts } or null
@@ -299,6 +301,7 @@ export class RideEngine extends EventTarget {
     if (cur.index !== this.lastStepIndex) {
       this.lastStepIndex = cur.index;
       this.bailout = { active: false, low: 0, recover: 0 };
+      this.ergRamp = null;
       this.lastCountdown = null;
       this.emit('interval', { index: cur.index, step: cur.step, next: this.workout.steps[cur.index + 1] ?? null });
     }
@@ -316,34 +319,56 @@ export class RideEngine extends EventTarget {
     const fraction = cur ? targetFraction(cur.step, cur.stepElapsed) : null;
     let target;
     if (this.autopilot && riding) {
-      this.mode = 'autopilot';
-      this.ergTarget = this.autopilot.update(dt, this.heartRate);
-      target = { mode: 'erg', watts: this.ergTarget };
+      const cadence = this.fresh(this.live.cadenceAt, 3000) ? this.live.cadence : null;
+      this.autopilot.update(dt, this.heartRate, { cadence });
+      const was = this.bailout.active;
+      this.updateBailout(dt, this.autopilot.watts);
+      // Bailed out: the watts were more than the legs had. Come back lighter.
+      if (this.bailout.active && !was) this.autopilot.ease(0.9);
+      this.ergTarget = this.autopilot.watts;
+      this.mode = this.bailout.active ? 'bailout' : 'autopilot';
+      if (!this.bailout.active) target = { mode: 'erg', watts: this.softStart(this.ergTarget, dt) };
     } else if (fraction != null && this.ergEnabled) {
       this.ergTarget = Math.max(0, Math.round(this.settings.ftp * (fraction + this.bias)));
       if (riding) this.updateBailout(dt, this.ergTarget);
       this.mode = this.bailout.active ? 'bailout' : 'erg';
-      if (this.mode === 'erg') target = { mode: 'erg', watts: this.ergTarget };
+      if (this.mode === 'erg') target = { mode: 'erg', watts: this.softStart(this.ergTarget, dt) };
     } else {
       this.mode = 'sim';
       this.ergTarget = fraction != null ? Math.round(this.settings.ftp * (fraction + this.bias)) : null;
     }
     if (!target) {
       const rs = this.routeState();
-      this.felt = slew(this.felt, feltGrade(rs?.grade ?? 0, this.settings.difficulty), dt || 0.001);
+      // Bailed out of ERG: a flat road, so the legs can spin back up.
+      const grade = this.mode === 'bailout' ? 0 : feltGrade(rs?.grade ?? 0, this.settings.difficulty);
+      this.felt = slew(this.felt, grade, dt || 0.001);
       target = { mode: 'sim', gradePct: Math.round(this.felt * 100) / 100, gear: this.gear };
     }
     this.trainer?.setTarget(target);
   }
 
-  // Zwift-style ERG "bailout": if you stop pedalling or collapse under the
-  // target, drop to riding the road (no spiral of death); re-engage once
-  // you're back at target for 5 s, or at the next interval.
+  // Back into ERG after a bail-out: build up to the target over 15 s
+  // instead of putting the brake straight back on.
+  softStart(watts, dt) {
+    const r = this.ergRamp;
+    if (!r) return watts;
+    r.t += dt;
+    if (r.t >= 15) {
+      this.ergRamp = null;
+      return watts;
+    }
+    return Math.round(r.from + (watts - r.from) * (r.t / 15));
+  }
+
+  // Zwift-style ERG "bailout": if you stop pedalling or your cadence sinks
+  // (ERG piles on torque as the legs slow — the spiral of death), drop to a
+  // flat road; re-engage once you're spinning again (or back at target) for
+  // 5 s, or at the next interval.
   updateBailout(dt, target) {
     const b = this.bailout;
     // Cadence counts only from a trainer that reports it.
     const cadence = this.fresh(this.live.cadenceAt, 3000) ? this.live.cadence : null;
-    const struggling = this.power < 0.3 * target || (cadence != null && cadence < 40);
+    const struggling = this.power < 0.3 * target || (cadence != null && cadence < 50);
     if (!b.active) {
       b.low = struggling ? b.low + dt : 0;
       if (b.low > 3) {
@@ -352,10 +377,12 @@ export class RideEngine extends EventTarget {
         this.emit('bailout', { active: true });
       }
     } else {
-      b.recover = this.power >= 0.9 * target && (cadence == null || cadence >= 50) ? b.recover + dt : 0;
+      const back = (this.power >= 0.9 * target || (cadence != null && cadence >= 75)) && (cadence == null || cadence >= 50);
+      b.recover = back ? b.recover + dt : 0;
       if (b.recover >= 5) {
         b.active = false;
         b.low = 0;
+        this.ergRamp = { from: Math.min(this.power, target), t: 0 };
         this.emit('bailout', { active: false });
       }
     }
@@ -401,7 +428,9 @@ export class RideEngine extends EventTarget {
             next: cur ? this.workout.steps[cur.index + 1] ?? null : null,
           }
         : null,
-      autopilot: this.autopilot ? { status: this.autopilot.status, targetHr: this.autopilot.targetHr, zoneMin: this.autopilot.zoneMin, zoneMax: this.autopilot.zoneMax, watts: this.autopilot.watts } : null,
+      autopilot: this.autopilot
+        ? { status: this.autopilot.status, capped: this.autopilot.capped, targetHr: this.autopilot.targetHr, zoneMin: this.autopilot.zoneMin, zoneMax: this.autopilot.zoneMax, watts: this.autopilot.watts }
+        : null,
     };
   }
 }

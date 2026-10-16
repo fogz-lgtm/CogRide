@@ -910,6 +910,12 @@ select {
   justify-content: space-between;
 }
 .profile svg,
+.stripk {
+  font: 620 9px var(--sans);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  fill: var(--paper-3);
+}
 .lprofile svg {
   display: block;
   width: 100%;
@@ -1322,7 +1328,7 @@ select {
     top: calc(312 * var(--s));
   }
   .ride .lprofile svg {
-    height: calc(30 * var(--s));
+    height: calc(40 * var(--s));
     margin-top: calc(6 * var(--s));
   }
   .ride .panel .profile {
@@ -1369,6 +1375,7 @@ select {
   .ride .nextline,
   .ride .wprofile,
   .ride .trace,
+  .ride .panel .tracekey,
   .ride .holding,
   .ride .ivkick {
     display: none;
@@ -2266,7 +2273,7 @@ select {
 .tv .tvroad svg {
   display: block;
   width: 100%;
-  height: calc(40 * var(--s));
+  height: calc(48 * var(--s));
   overflow: visible;
 }
 .tv .tvprofile {
@@ -2391,4 +2398,35 @@ select {
   font: 520 11px/1.4 ui-monospace, Menlo, monospace;
   color: var(--paper-3);
   word-break: break-word;
+}
+
+/* Key for the Zone 2 chart: heart rate (red) and power (grey) over time. */
+.tracekey {
+  display: flex;
+  gap: 14px;
+  margin-top: calc(14 * var(--s));
+  font: 620 calc(10 * var(--s)) / 1 var(--sans);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--paper-4);
+}
+.tracekey .hr {
+  color: #e8735f;
+}
+.tracekey .pw {
+  color: var(--paper-3);
+}
+.tracekey span:last-child {
+  margin-left: auto;
+}
+.tv .tracekey + .tvprofile {
+  margin-top: calc(6 * var(--s));
+}
+.tv .z2band,
+.tv .tracekey {
+  flex-shrink: 0;
+}
+.tv .tvprofile {
+  flex-shrink: 1;
+  min-height: 18px;
 }

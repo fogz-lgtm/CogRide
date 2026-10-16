@@ -31,32 +31,62 @@ const line = (pts) => pts.map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(1)} ${p[
 // ---------------------------------------------------------------- elevation strip
 
 // The whole climb (or one lap) with the ridden part inked in.
-export function ElevationStrip({ route, distance = 0, units = 'imperial', className = '' }) {
+// The road's profile. With `ahead` (metres): the road coming up from where
+// you are — what the 3D view is about to show — at a scale where a few per
+// cent looks like a few per cent. Without: the whole route, with ridden part
+// filled, exaggerated no more than needed (a rolling loop looks rolling, not
+// alpine).
+export function ElevationStrip({ route, distance = 0, units = 'imperial', className = '', ahead = null }) {
   const ref = useRef(null);
   const { w, h } = useSize(ref);
-  const shape = useMemo(() => {
+  const whole = useMemo(() => {
     if (!route) return null;
     const n = 160;
     const len = route.length;
     const es = Array.from({ length: n + 1 }, (_, i) => route.elevationAt((len * i) / n));
     const min = Math.min(...es);
     const max = Math.max(...es);
-    return { len, es, min, span: Math.max(20, max - min) };
+    return { len, es, min, span: Math.max(20, max - min, len * 0.015) };
   }, [route]);
-  if (!shape) return html`<svg ref=${ref} class=${className}></svg>`;
+  if (!whole) return html`<svg ref=${ref} class=${className}></svg>`;
   const pad = 3;
-  const X = (d) => (d / shape.len) * w;
-  const Y = (e) => h - 1 - ((e - shape.min) / shape.span) * (h - pad - 1);
-  const pts = shape.es.map((e, i) => [(i / (shape.es.length - 1)) * w, Y(e)]);
-  const d = route.locate(distance).d;
-  const xd = X(d);
-  const yd = Y(route.elevationAt(d));
+  const id = `es${route.id ?? 'r'}${ahead ? 'a' : ''}`.replace(/[^a-z0-9]/gi, '');
+  const tickEvery = units === 'metric' ? 1000 : M_PER_MI;
+
+  let pts;
+  let xd;
+  let yd;
+  let ticks = [];
+  let label = null;
+  if (ahead) {
+    // Sample along the rider's way (laps and out-and-back descents included).
+    const behind = ahead * 0.12;
+    const total = ahead + behind;
+    const n = 120;
+    const at = (x) => route.elevationAt(route.locate(Math.max(0, distance + x)).d);
+    const es = Array.from({ length: n + 1 }, (_, i) => at(-behind + (total * i) / n));
+    // Steady scale: snapped to 10 m so it doesn't twitch as the road scrolls.
+    const lo = Math.floor(Math.min(...es) / 10) * 10;
+    const span = Math.ceil(Math.max(Math.max(...es) - lo, total * 0.03) / 10) * 10;
+    const top = 13; // room for the label
+    const Y = (e) => h - 1 - ((e - lo) / span) * (h - top - 1);
+    pts = es.map((e, i) => [(i / n) * w, Y(e)]);
+    xd = (behind / total) * w;
+    yd = Y(at(0));
+    const half = tickEvery / 2;
+    for (let m = half; m < ahead; m += half) ticks.push(xd + (m / total) * w);
+    label = units === 'metric' ? `Next ${Math.round(ahead / 1000)} km` : `Next ${Math.round(ahead / M_PER_MI)} mi`;
+  } else {
+    const Y = (e) => h - 1 - ((e - whole.min) / whole.span) * (h - pad - 1);
+    const X = (d) => (d / whole.len) * w;
+    pts = whole.es.map((e, i) => [(i / (whole.es.length - 1)) * w, Y(e)]);
+    const d = route.locate(distance).d;
+    xd = X(d);
+    yd = Y(route.elevationAt(d));
+    for (let m = tickEvery; m < whole.len; m += tickEvery) ticks.push(X(m));
+  }
   const ridden = pts.filter((p) => p[0] <= xd).concat([[xd, yd]]);
   const area = (p) => `${line(p)}L${p.at(-1)[0].toFixed(1)} ${h}L0 ${h}Z`;
-  const tickEvery = units === 'metric' ? 1000 : M_PER_MI;
-  const ticks = [];
-  for (let m = tickEvery; m < shape.len; m += tickEvery) ticks.push(X(m));
-  const id = `es${route.id ?? 'r'}`.replace(/[^a-z0-9]/gi, '');
   return html`<svg ref=${ref} class=${className} viewBox="0 0 ${w} ${h}" aria-hidden="true">
     <defs>
       <pattern id="${id}h" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="5" stroke="rgba(243,235,221,.12)" stroke-width="1.2" /></pattern>
@@ -68,6 +98,7 @@ export function ElevationStrip({ route, distance = 0, units = 'imperial', classN
     ${ticks.map((x) => html`<line x1=${x} x2=${x} y1=${h - 4} y2=${h} stroke="rgba(243,235,221,.3)" />`)}
     <line x1=${xd} x2=${xd} y1="0" y2=${h} stroke="var(--paper)" stroke-width="1.2" opacity=".6" />
     <circle cx=${xd} cy=${yd} r="4.5" fill="var(--ink-1)" stroke="var(--paper)" stroke-width="2" />
+    ${label && html`<text x=${w} y="9" text-anchor="end" class="stripk">${label}</text>`}
   </svg>`;
 }
 

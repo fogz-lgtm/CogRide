@@ -166,3 +166,31 @@ test('fuel reminders follow the setting when it changes mid-ride', () => {
   run(130);
   assert.equal(events.filter(([t]) => t === 'fuel').length, 2);
 });
+
+test('autopilot: a collapsing cadence bails out to a flat road, then eases back in lighter', () => {
+  const { engine, sim, events, run } = rig();
+  engine.setRoute(climb());
+  engine.setAutopilot({ targetHr: 135, zoneMin: 122, zoneMax: 151, startWatts: 170, minWatts: 60, maxWatts: 170 });
+  engine.start();
+  run(30);
+  assert.equal(sim.target.mode, 'erg');
+  // The spiral: legs slow, ERG piles on torque.
+  sim.step = function () {
+    this.dispatchEvent(new CustomEvent('data', { detail: { power: 165, cadence: 34, heartRate: 134 } }));
+  };
+  run(5);
+  assert.equal(engine.mode, 'bailout');
+  assert.equal(sim.target.mode, 'sim');
+  run(6);
+  assert.ok(Math.abs(sim.target.gradePct) < 0.5, `flat road while recovering, got ${sim.target.gradePct} %`);
+  assert.ok(engine.snapshot().autopilot.watts <= 153, 'comes back 10 % lighter');
+  // Spinning again: ERG resumes, building up rather than slamming on.
+  sim.step = function () {
+    this.dispatchEvent(new CustomEvent('data', { detail: { power: 90, cadence: 88, heartRate: 130 } }));
+  };
+  run(6);
+  assert.equal(engine.mode, 'autopilot');
+  assert.equal(sim.target.mode, 'erg');
+  assert.ok(sim.target.watts < engine.snapshot().autopilot.watts, `soft start: ${sim.target.watts}`);
+  assert.ok(events.some(([t, d]) => t === 'bailout' && d.active));
+});

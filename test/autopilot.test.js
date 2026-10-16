@@ -76,3 +76,24 @@ test('imperial and metric formatting', () => {
   assert.ok(Math.abs(U.parseWeight(160, 'imperial') - 72.5748) < 0.001);
   assert.equal(U.fmt(U.speed(null, 'imperial')), '-- mph');
 });
+
+test('starts gently: holds the start for 3 min, then adds at most 12 W a minute', () => {
+  const pilot = new HrAutopilot(autopilotDefaults({ ftp: 200 }));
+  const watts = [];
+  for (let t = 0; t < 600; t++) watts.push(pilot.update(1, 95)); // HR far below target
+  assert.ok(watts.slice(0, 179).every((w) => w === 110), 'rose during the first 3 min'); // (index 179 = 3:00)
+  for (let t = 240; t < 600; t += 60) assert.ok(watts[t] - watts[t - 60] <= 12, `+${watts[t] - watts[t - 60]} W in a minute`);
+  assert.equal(Math.max(...watts), 150); // the top of Zone 2 power (75 % FTP), not more
+});
+
+test('legs before heart: grinding under 65 rpm backs the watts off', () => {
+  const pilot = new HrAutopilot({ targetHr: 135, startWatts: 170, minWatts: 60, maxWatts: 170, warmupS: 0 });
+  for (let t = 0; t < 60; t++) pilot.update(1, 120, { cadence: 88 });
+  assert.equal(pilot.watts, 170);
+  for (let t = 0; t < 15; t++) pilot.update(1, 120, { cadence: 52 });
+  assert.ok(pilot.watts < 165, `${pilot.watts}`);
+  const eased = pilot.watts;
+  // HR still low, cadence back: no climbing again for two minutes.
+  for (let t = 0; t < 100; t++) pilot.update(1, 120, { cadence: 88 });
+  assert.ok(pilot.watts <= eased);
+});
