@@ -207,3 +207,83 @@ test('a lost upload permission asks for a reconnect; a missing read permission d
   await S.uploadFit(new Uint8Array([1]), {}, { fetchImpl: ok, pollMs: 1 });
   assert.equal(S.needsReconnect(), false);
 });
+
+// ---------------------------------------------------------------- staying signed in
+
+const connectedAs = (extra = {}) =>
+  S.saveStrava({ clientId: '1', clientSecret: SECRET, accessToken: 'old', refreshToken: 'R1', expiresAt: 100, scope: 'read,activity:write', athlete: { firstName: 'Patrick', lastName: 'Fogerty' }, ...extra });
+
+test('opening the app asks once: concurrent requests share one refresh', async () => {
+  connectedAs();
+  const fetchImpl = fakeFetch(async () => {
+    await new Promise((r) => setTimeout(r, 5));
+    return { body: { access_token: 'A2', refresh_token: 'R2', expires_at: 2e9 } };
+  });
+  const tokens = await Promise.all([S.accessToken({ fetchImpl }), S.accessToken({ fetchImpl }), S.accessToken({ fetchImpl })]);
+  assert.deepEqual(tokens, ['A2', 'A2', 'A2']);
+  assert.equal(fetchImpl.calls.length, 1);
+});
+
+test('losing a refresh race to another tab is not a lost sign-in', async () => {
+  connectedAs();
+  // The other tab refreshes first (saving R2), so Strava refuses our R1.
+  const fetchImpl = fakeFetch(() => {
+    S.saveStrava({ ...S.loadStrava(), accessToken: 'A2', refreshToken: 'R2', expiresAt: 2e9 });
+    return { status: 400, body: { message: 'Bad Request', errors: [{ resource: 'RefreshToken', field: 'refresh_token', code: 'invalid' }] } };
+  });
+  assert.equal(await S.accessToken({ fetchImpl }), 'A2');
+  assert.equal(S.needsReconnect(), false);
+});
+
+test('stays in step with OnPace on the same Strava app', async () => {
+  connectedAs();
+  store.set('onpace:strava', JSON.stringify({ clientId: '1', clientSecret: SECRET, accessToken: 'P1', refreshToken: 'PR1', expiresAt: 50, athlete: 'Patrick Fogerty', other: 'kept' }));
+  // Our refresh hands OnPace the new tokens, leaving the rest of its record alone.
+  const ok = fakeFetch(() => ({ body: { access_token: 'A2', refresh_token: 'R2', expires_at: 2e9 } }));
+  assert.equal(await S.accessToken({ fetchImpl: ok }), 'A2');
+  let onpace = JSON.parse(store.get('onpace:strava'));
+  assert.deepEqual([onpace.accessToken, onpace.refreshToken, onpace.expiresAt, onpace.other], ['A2', 'R2', 2e9, 'kept']);
+
+  // Later OnPace refreshes the shared sign-in and Strava retires our R2:
+  // carry on from OnPace's copy instead of asking for a new sign-in.
+  S.saveStrava({ ...S.loadStrava(), expiresAt: 100 });
+  store.set('onpace:strava', JSON.stringify({ ...onpace, accessToken: 'P3', refreshToken: 'PR3', expiresAt: 3e9 }));
+  const refused = fakeFetch(() => ({ status: 400, body: { message: 'Bad Request' } }));
+  assert.equal(await S.accessToken({ fetchImpl: refused }), 'P3');
+  assert.equal(S.loadStrava().refreshToken, 'PR3');
+  assert.equal(S.needsReconnect(), false);
+  assert.equal(refused.calls.length, 1);
+});
+
+test('never borrows tokens from another Strava app or another athlete', async () => {
+  for (const peer of [
+    { clientId: '2', accessToken: 'X', refreshToken: 'XR', expiresAt: 2e9, athlete: 'Patrick Fogerty' },
+    { clientId: '1', accessToken: 'Y', refreshToken: 'YR', expiresAt: 2e9, athlete: 'Someone Else' },
+  ]) {
+    store.clear();
+    connectedAs();
+    store.set('onpace:strava', JSON.stringify(peer));
+    const refused = fakeFetch(() => ({ status: 400, body: { message: 'Bad Request' } }));
+    await assert.rejects(S.accessToken({ fetchImpl: refused }));
+    assert.equal(S.needsReconnect(), true);
+    assert.notEqual(S.loadStrava().accessToken, peer.accessToken);
+  }
+});
+
+test('OnPace’s newer copy is a fallback, not a replacement for a working sign-in', async () => {
+  connectedAs({ accessToken: 'mine', expiresAt: 2e9 });
+  store.set('onpace:strava', JSON.stringify({ clientId: '1', accessToken: 'P', refreshToken: 'PR', expiresAt: 3e9, athlete: 'Patrick Fogerty' }));
+  assert.equal(await S.accessToken({ now: 1e12 }), 'mine');
+});
+
+test('a token Strava turns down is refreshed and the call tried once more', async () => {
+  connectedAs({ accessToken: 'stale', expiresAt: 2e9 });
+  const fetchImpl = fakeFetch((url, init) => {
+    if (url.includes('oauth/token')) return { body: { access_token: 'A2', refresh_token: 'R2', expires_at: 2.1e9 } };
+    if (init.headers.Authorization === 'Bearer stale') return { status: 401, body: { message: 'Authorization Error', errors: [{ resource: 'Athlete', field: 'access_token', code: 'invalid' }] } };
+    return { body: { id: 1, name: 'Hawk Hill', distance: 1000 } };
+  });
+  await S.fetchSegmentTrack('229781', { fetchImpl }).catch(() => {});
+  assert.equal(S.loadStrava().accessToken, 'A2');
+  assert.equal(S.needsReconnect(), false);
+});

@@ -139,7 +139,7 @@ export async function completeAuthorization(location = globalThis.location, { fe
   try {
     const data = await tokenRequest({ client_id: s.clientId, client_secret: s.clientSecret, code, grant_type: 'authorization_code' }, fetchImpl);
     const granted = params.get('scope') || '';
-    saveStrava({
+    const next = {
       ...s,
       accessToken: data.access_token,
       refreshToken: data.refresh_token,
@@ -147,7 +147,10 @@ export async function completeAuthorization(location = globalThis.location, { fe
       scope: granted,
       needsReconnect: false,
       athlete: data.athlete ? { id: data.athlete.id, firstName: data.athlete.firstname, lastName: data.athlete.lastname } : null,
-    });
+    };
+    saveStrava(next);
+    // A new sign-in can retire OnPace's tokens for the same Strava app: hand it these.
+    sharePeerTokens(next);
     const missing = SCOPE.split(',').filter((sc) => !granted.split(/[ ,]+/).includes(sc));
     return {
       ok: true,
@@ -163,40 +166,125 @@ export function disconnect() {
   if (s) saveStrava({ clientId: s.clientId, clientSecret: s.clientSecret });
 }
 
-export async function accessToken({ fetchImpl, now = Date.now() } = {}) {
+// ---------------------------------------------------------------- tokens
+//
+// Strava keeps one set of tokens per API app and athlete, and the refresh
+// token can change whenever a new access token is issued. Everything that
+// shares the sign-in has to stay on the newest tokens:
+//  - this page: one refresh at a time (opening the app asks for several things at once);
+//  - other tabs (CogRide and FluxRide): a lock, and a re-read before giving up;
+//  - OnPace, on the same site and usually the same Strava app: it gets our
+//    new tokens, and its copy is the fallback if ours are refused.
+
+const PEERS = ['onpace:strava'];
+
+// Same Strava app and, when both know it, the same athlete (OnPace keeps a name).
+function samePeer(p, s) {
+  if (!p?.refreshToken || !s?.clientId || String(p.clientId) !== String(s.clientId)) return false;
+  const ours = s.athlete ? `${s.athlete.firstName ?? ''} ${s.athlete.lastName ?? ''}`.trim().toLowerCase() : '';
+  const theirs = typeof p.athlete === 'string' ? p.athlete.trim().toLowerCase() : '';
+  return !ours || !theirs || ours === theirs;
+}
+
+// A peer's sign-in to fall back on when ours is refused. (Only then: OnPace
+// asks Strava for read-only access, so its tokens may not upload rides.)
+function peerTokens(s, refused) {
+  for (const key of PEERS) {
+    const p = read(key, null);
+    if (samePeer(p, s) && p.refreshToken !== refused) return { accessToken: p.accessToken, refreshToken: p.refreshToken, expiresAt: p.expiresAt };
+  }
+  return null;
+}
+
+// Give peers our tokens when they're newer than theirs.
+function sharePeerTokens(s) {
+  for (const key of PEERS) {
+    const p = read(key, null);
+    if (samePeer(p, s) && (s.expiresAt || 0) >= (p.expiresAt || 0)) write(key, { ...p, accessToken: s.accessToken, refreshToken: s.refreshToken, expiresAt: s.expiresAt });
+  }
+}
+
+function withLock(fn) {
+  const locks = globalThis.navigator?.locks;
+  return locks?.request ? locks.request('cogride-strava-token', fn) : fn();
+}
+
+const fresh = (s, now, rejected) => !!(s.accessToken && s.accessToken !== rejected && s.expiresAt > now / 1000 + 120);
+
+let refreshing = null;
+
+// A working access token. `rejected`: one Strava just turned down.
+export async function accessToken({ fetchImpl, now = Date.now(), rejected = null } = {}) {
   const s = loadStrava();
   if (!isConnected(s)) throw new Error('Strava is not connected');
-  if (s.accessToken && s.expiresAt > now / 1000 + 120) return s.accessToken;
-  let data;
+  if (fresh(s, now, rejected)) return s.accessToken;
+  refreshing ??= withLock(() => refresh(fetchImpl, rejected)).finally(() => (refreshing = null));
+  return refreshing;
+}
+
+function keep(tokens) {
+  const next = { ...loadStrava(), ...tokens };
+  saveStrava(next);
+  sharePeerTokens(next);
+  return next.accessToken;
+}
+
+const refreshWith = (s, refreshToken, fetchImpl) =>
+  tokenRequest({ client_id: s.clientId, client_secret: s.clientSecret, grant_type: 'refresh_token', refresh_token: refreshToken }, fetchImpl).then((d) =>
+    keep({ accessToken: d.access_token, refreshToken: d.refresh_token, expiresAt: d.expires_at }),
+  );
+
+async function refresh(fetchImpl, rejected) {
+  // Another tab may have refreshed while this one waited.
+  const s = loadStrava();
+  if (fresh(s, Date.now(), rejected)) return s.accessToken;
+  const used = s.refreshToken;
   try {
-    data = await tokenRequest(
-      { client_id: s.clientId, client_secret: s.clientSecret, grant_type: 'refresh_token', refresh_token: s.refreshToken },
-      fetchImpl,
-    );
+    return await refreshWith(s, used, fetchImpl);
   } catch (err) {
-    if (err.auth) markSignIn(false);
+    if (!err.auth) throw err;
+    // Refused because another tab just refreshed with the same token? Its
+    // new tokens are saved already.
+    const now = loadStrava();
+    if (now.refreshToken !== used && fresh(now, Date.now(), rejected)) return now.accessToken;
+    // Or OnPace refreshed the shared sign-in: carry on from its copy.
+    const peer = peerTokens(now, used);
+    if (peer) {
+      if (fresh(peer, Date.now(), rejected)) return keep(peer);
+      try {
+        return await refreshWith(now, peer.refreshToken, fetchImpl);
+      } catch {
+        // fall through: really signed out
+      }
+    }
+    markSignIn(false);
     throw err;
   }
-  saveStrava({ ...loadStrava(), accessToken: data.access_token, refreshToken: data.refresh_token, expiresAt: data.expires_at });
-  return data.access_token;
 }
 
 async function api(path, { fetchImpl = globalThis.fetch, ...init } = {}) {
-  const token = await accessToken({ fetchImpl });
-  const res = await fetchImpl(`${API}${path}`, { ...init, headers: { ...(init.headers || {}), Authorization: `Bearer ${token}` } });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
+  let rejected = null;
+  for (let attempt = 0; ; attempt++) {
+    const token = await accessToken({ fetchImpl, rejected });
+    const res = await fetchImpl(`${API}${path}`, { ...init, headers: { ...(init.headers || {}), Authorization: `Bearer ${token}` } });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) return data;
     const err = new Error(data.message || `Strava error ${res.status}`);
     err.status = res.status;
     err.body = data;
-    // 401: the sign-in was revoked or replaced, or lacks a permission. A
-    // missing read permission only costs that one feature (HR zones, say).
+    // 401: the token was replaced (another app or tab refreshed), the
+    // sign-in was revoked, or it lacks a permission. A missing read
+    // permission only costs that one feature (HR zones, say).
     err.auth = res.status === 401;
     const missing = (Array.isArray(data.errors) ? data.errors : []).find((e) => e?.code === 'missing')?.field;
+    // A replaced token: get the current one and try once more.
+    if (err.auth && !missing && attempt === 0) {
+      rejected = token;
+      continue;
+    }
     if (err.auth && !(missing && !/write/.test(missing))) markSignIn(false);
     throw err;
   }
-  return data;
 }
 
 // Weight, FTP, units and HR zones: used to size the physics and set targets.
