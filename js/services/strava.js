@@ -132,8 +132,12 @@ export async function completeAuthorization(location = globalThis.location, { fe
   const expected = read(STATE_KEY, null);
   write(STATE_KEY, null);
   clean();
+  const stale = !expected || params.get('state') !== expected;
+  // An old sign-in link (a bookmark, a restored tab, a second load): when
+  // Strava is already connected there's nothing to say.
+  if (stale && isConnected()) return null;
   if (error) return { ok: false, message: 'Strava connection was cancelled.' };
-  if (!expected || params.get('state') !== expected) return { ok: false, message: 'That Strava sign-in link expired. Tap Connect again.' };
+  if (stale) return { ok: false, message: 'That Strava sign-in link expired. Tap Connect again.' };
   const s = loadStrava();
   if (!s?.clientId || !s?.clientSecret) return { ok: false, message: 'Strava app details are missing. Enter them and tap Connect again.' };
   try {

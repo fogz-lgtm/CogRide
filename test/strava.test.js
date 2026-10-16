@@ -287,3 +287,17 @@ test('a token Strava turns down is refreshed and the call tried once more', asyn
   assert.equal(S.loadStrava().accessToken, 'A2');
   assert.equal(S.needsReconnect(), false);
 });
+
+test('an old sign-in link is ignored when Strava is already connected', async () => {
+  connectedAs({ accessToken: 'mine', expiresAt: 2e9 });
+  let cleaned = null;
+  const old = { ...location, search: '?state=0123456789abcdef0123456789abcdef&code=USED&scope=read,activity:write' };
+  assert.equal(await S.completeAuthorization(old, { replaceUrl: (u) => (cleaned = u) }), null);
+  assert.equal(cleaned, 'https://fogz-lgtm.github.io/CogRide/'); // still tidied away
+  assert.equal(S.loadStrava().accessToken, 'mine');
+  // Not connected: the same link still says what to do.
+  store.clear();
+  const r = await S.completeAuthorization(old, { replaceUrl: () => {} });
+  assert.equal(r.ok, false);
+  assert.match(r.message, /expired/);
+});
