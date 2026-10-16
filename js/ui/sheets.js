@@ -15,6 +15,7 @@ import { estimateTss } from './home.js';
 import { parseWeight } from '../core/units.js';
 import { redirectUri } from '../services/strava.js';
 import { APP, isFlux } from '../variant.js';
+import { logEntries } from '../log.js';
 
 const Seg = ({ value, options, onChange }) => html`<div class="seg">${options.map(([v, label]) => html`<button class=${v === value ? 'on' : ''} onClick=${() => onChange(v)}>${label}</button>`)}</div>`;
 const Toggle = ({ on, onChange, label }) => html`<button class=${`toggle ${on ? 'on' : ''}`} role="switch" aria-checked=${on} aria-label=${label} onClick=${() => onChange(!on)}></button>`;
@@ -377,11 +378,31 @@ export function SettingsSheet({ c, s }) {
       </div>
     </div>
 
+    <${DiagnosticsCard} c=${c} />
+
     <div class="section about">
       <div class="k">About</div>
       <p class="sub small">Routes follow real roads from OpenStreetMap (© OpenStreetMap contributors, ODbL) with elevation from AWS Terrain Tiles. Fonts: Archivo and Fraunces (SIL OFL). 3D: three.js (MIT). Build ${globalThis.COGRIDE_BUILD || 'dev'}.</p>
     </div>
   <//>`;
+}
+
+// ---------------------------------------------------------------- diagnostics
+
+function DiagnosticsCard({ c }) {
+  const [, redraw] = useState(0);
+  const entries = logEntries();
+  const since = entries[0] ? new Date(entries[0].t).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : null;
+  return html`<div class="section" id="diagnostics">
+    <div class="k">Diagnostics</div>
+    <${Row}
+      title="Ride log"
+      sub=${`${entries.length ? `${entries.length.toLocaleString('en-US')} events since ${since}` : 'Empty'}. What the trainer, Clicks, heart rate, autopilot and Strava did — kept on this phone, and sent nowhere unless you share it. No passwords or keys.`}
+    >
+      <button class="btn sec small" disabled=${!entries.length} onClick=${() => c.shareLog()}>Share</button>
+    <//>
+    ${entries.length > 0 && html`<button class="btn ghost small" onClick=${() => (c.clearDiagnostics(), redraw((n) => n + 1))}>Clear the log</button>`}
+  </div>`;
 }
 
 // ---------------------------------------------------------------- devices

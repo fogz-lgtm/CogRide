@@ -13,6 +13,7 @@
 import { BleDevice, writeCharacteristic, subscribe, bytesOf, uuidOf, UUID } from './bleDevice.js';
 import { FTMS_SERVICE, INDOOR_BIKE_DATA, CONTROL_POINT, OpCode, parseIndoorBikeData, parseControlPointResponse, encodeSetTargetPower, encodeSimulation } from './ftmsTrainer.js';
 import { ZWIFT_CW, ZWIFT_CRR } from '../core/gearing.js';
+import { log } from '../log.js';
 
 export const FEC_SERVICE = '6e40fec1-b5a3-f393-e0a9-e50e24dcca9e';
 export const FEC_NOTIFY = '6e40fec2-b5a3-f393-e0a9-e50e24dcca9e';
@@ -213,6 +214,7 @@ export class TacxTrainer extends BleDevice {
     } else {
       throw new Error('This doesn’t look like a Tacx smart trainer (no FE-C or FTMS service). Close the Tacx Training app and try again.');
     }
+    log('trainer', 'path', { ...this.logWho, path: this.path, ftms: !!this.ftms, services: this.services?.map((u) => u.slice(0, 8)) });
     this.dispatchEvent(new CustomEvent('path', { detail: { path: this.path } }));
     clearInterval(this.keepalive);
     this.keepalive = setInterval(() => this.kick(), 1000);
@@ -249,6 +251,7 @@ export class TacxTrainer extends BleDevice {
         if (d.userConfigNeeded) this.sent.masses = null; // send it again
         if (d.calibrationNeeded && !this.calibrationWarned) {
           this.calibrationWarned = true;
+          log('trainer', 'calibration requested by the trainer');
           this.dispatchEvent(new CustomEvent('warning', { detail: { message: 'The trainer is asking for a calibration. Run one in the Tacx Training app when you have a minute; power may read a little off until then.' } }));
         }
       } else if (d.kind === 'general' && d.heartRate) {
@@ -270,6 +273,7 @@ export class TacxTrainer extends BleDevice {
     }
     if (!kind || t - this.limitSince < 4000 || t - this.hintedAt < 30000) return;
     this.hintedAt = t;
+    log('trainer', 'brake out of range in ERG', { limit: kind === 1 ? 'too slow' : 'too fast', watts: this.target.watts });
     this.dispatchEvent(new CustomEvent('gear-hint', { detail: { direction: kind === 1 ? 1 : -1 } }));
   }
 
@@ -341,7 +345,10 @@ export class TacxTrainer extends BleDevice {
     await writeCharacteristic(this.ftms.cp, Uint8Array.from(bytes));
     const code = await result;
     if (code === 5) await this.ftmsCommand([OpCode.REQUEST_CONTROL]).catch(() => {});
-    if (code !== 1) throw new Error(`Trainer refused command 0x${opcode.toString(16)} (${code})`);
+    if (code !== 1) {
+      log('trainer', 'FTMS command refused', { opcode, code });
+      throw new Error(`Trainer refused command 0x${opcode.toString(16)} (${code})`);
+    }
   }
 
   // ---------------------------------------------------------------- targets
@@ -352,6 +359,7 @@ export class TacxTrainer extends BleDevice {
   }
 
   setTarget(target) {
+    if (target.mode !== this.target.mode) log('trainer', `mode ${target.mode}`, target.mode === 'erg' ? { watts: target.watts } : { grade: target.gradePct });
     this.target = { ...target };
     this.kick();
   }
@@ -377,6 +385,7 @@ export class TacxTrainer extends BleDevice {
         }
       } while (this.wake);
     } catch (err) {
+      log('trainer', 'command failed', { path: this.path, error: err.message });
       this.dispatchEvent(new CustomEvent('warning', { detail: { message: err.message } }));
     } finally {
       this.pumping = false;

@@ -3,6 +3,8 @@
 // localStorage. The browser does the OAuth exchange and token refreshes itself,
 // then uploads finished rides as FIT files.
 
+import { log } from '../log.js';
+
 const AUTH_URL = 'https://www.strava.com/oauth/authorize';
 const TOKEN_URL = 'https://www.strava.com/oauth/token';
 const API = 'https://www.strava.com/api/v3';
@@ -60,7 +62,10 @@ export function needsReconnect(s = loadStrava()) {
 
 function markSignIn(ok) {
   const s = loadStrava();
-  if (s && !!s.needsReconnect === ok) saveStrava({ ...s, needsReconnect: !ok });
+  if (s && !!s.needsReconnect === ok) {
+    log('strava', ok ? 'sign-in working again' : 'marked: needs sign-in');
+    saveStrava({ ...s, needsReconnect: !ok });
+  }
 }
 
 export function canUpload(s = loadStrava()) {
@@ -133,6 +138,7 @@ export async function completeAuthorization(location = globalThis.location, { fe
   write(STATE_KEY, null);
   clean();
   const stale = !expected || params.get('state') !== expected;
+  log('strava', 'back from Strava', { stale, error: error || undefined, connected: isConnected(), scope: params.get('scope') || undefined });
   // An old sign-in link (a bookmark, a restored tab, a second load): when
   // Strava is already connected there's nothing to say.
   if (stale && isConnected()) return null;
@@ -153,6 +159,7 @@ export async function completeAuthorization(location = globalThis.location, { fe
       athlete: data.athlete ? { id: data.athlete.id, firstName: data.athlete.firstname, lastName: data.athlete.lastname } : null,
     };
     saveStrava(next);
+    log('strava', 'connected', { scope: granted, athlete: data.athlete?.id });
     // A new sign-in can retire OnPace's tokens for the same Strava app: hand it these.
     sharePeerTokens(next);
     const missing = SCOPE.split(',').filter((sc) => !granted.split(/[ ,]+/).includes(sc));
@@ -161,11 +168,13 @@ export async function completeAuthorization(location = globalThis.location, { fe
       message: missing.includes('activity:write') ? 'Connected, but upload permission was unticked, so rides won’t upload. Tap Connect again and leave every box ticked.' : 'Connected to Strava.',
     };
   } catch (err) {
+    log('strava', 'connect failed', { status: err.status, message: err.message });
     return { ok: false, message: `Strava connection failed: ${err.message}` };
   }
 }
 
 export function disconnect() {
+  log('strava', 'disconnected (by you)');
   const s = loadStrava();
   if (s) saveStrava({ clientId: s.clientId, clientSecret: s.clientSecret });
 }
@@ -234,9 +243,10 @@ function keep(tokens) {
 }
 
 const refreshWith = (s, refreshToken, fetchImpl) =>
-  tokenRequest({ client_id: s.clientId, client_secret: s.clientSecret, grant_type: 'refresh_token', refresh_token: refreshToken }, fetchImpl).then((d) =>
-    keep({ accessToken: d.access_token, refreshToken: d.refresh_token, expiresAt: d.expires_at }),
-  );
+  tokenRequest({ client_id: s.clientId, client_secret: s.clientSecret, grant_type: 'refresh_token', refresh_token: refreshToken }, fetchImpl).then((d) => {
+    log('strava', 'token renewed', { validMin: Math.round((d.expires_at - Date.now() / 1000) / 60), refreshChanged: d.refresh_token !== refreshToken });
+    return keep({ accessToken: d.access_token, refreshToken: d.refresh_token, expiresAt: d.expires_at });
+  });
 
 async function refresh(fetchImpl, rejected) {
   // Another tab may have refreshed while this one waited.
@@ -246,14 +256,19 @@ async function refresh(fetchImpl, rejected) {
   try {
     return await refreshWith(s, used, fetchImpl);
   } catch (err) {
+    log('strava', 'token renewal failed', { status: err.status, message: err.message });
     if (!err.auth) throw err;
     // Refused because another tab just refreshed with the same token? Its
     // new tokens are saved already.
     const now = loadStrava();
-    if (now.refreshToken !== used && fresh(now, Date.now(), rejected)) return now.accessToken;
+    if (now.refreshToken !== used && fresh(now, Date.now(), rejected)) {
+      log('strava', 'using tokens another tab just renewed');
+      return now.accessToken;
+    }
     // Or OnPace refreshed the shared sign-in: carry on from its copy.
     const peer = peerTokens(now, used);
     if (peer) {
+      log('strava', 'falling back to OnPace’s copy of the sign-in');
       if (fresh(peer, Date.now(), rejected)) return keep(peer);
       try {
         return await refreshWith(now, peer.refreshToken, fetchImpl);
@@ -281,6 +296,7 @@ async function api(path, { fetchImpl = globalThis.fetch, ...init } = {}) {
     // permission only costs that one feature (HR zones, say).
     err.auth = res.status === 401;
     const missing = (Array.isArray(data.errors) ? data.errors : []).find((e) => e?.code === 'missing')?.field;
+    log('strava', 'API error', { path: path.replace(/\d{3,}/g, '#').split('?')[0], status: res.status, missing: missing || undefined, retry: err.auth && !missing && attempt === 0 ? true : undefined });
     // A replaced token: get the current one and try once more.
     if (err.auth && !missing && attempt === 0) {
       rejected = token;
@@ -414,12 +430,15 @@ export async function uploadFit(bytes, { name, description, externalId } = {}, {
     const dup = /duplicate of (?:activity\s+|<a href='\/activities\/)?(\d+)/i.exec(upload.error);
     if (dup) {
       markSignIn(true);
+      log('strava', 'upload: already on Strava', { activityId: dup[1] });
       return { activityId: dup[1], duplicate: true };
     }
+    log('strava', 'upload rejected', { error: upload.error });
     throw new Error(upload.error);
   }
   if (!upload.activity_id) throw new Error('Strava is still processing the ride; it will appear shortly.');
   markSignIn(true);
+  log('strava', 'uploaded', { activityId: String(upload.activity_id) });
   return { activityId: String(upload.activity_id), duplicate: false };
 }
 

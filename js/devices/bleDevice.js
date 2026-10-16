@@ -1,5 +1,7 @@
 // Shared Web Bluetooth plumbing: pairing, status events and auto-reconnect.
 
+import { log } from '../log.js';
+
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export function bluetoothAvailable() {
@@ -71,6 +73,12 @@ export class BleDevice extends EventTarget {
     this.reconnectDelayMs = (attempt) => 1000 * attempt;
     this.reconnectMessage = (attempt) => `Reconnecting (${attempt}/${this.reconnectTries})…`;
     this.handleDisconnect = () => this.onGattDisconnected();
+    this.logArea = String(label).toLowerCase(); // 'trainer' | 'click' | 'hr'
+  }
+
+  // Who this is in the log (two Click pucks share a name: the id tells them apart).
+  get logWho() {
+    return { name: this.device?.name, id: this.device?.id?.slice(0, 6) };
   }
 
   get connected() {
@@ -82,6 +90,7 @@ export class BleDevice extends EventTarget {
   }
 
   setState(state, message = '') {
+    if (state !== this.state || message !== this.message) log(this.logArea, state, { ...this.logWho, message: message || undefined });
     this.state = state;
     this.message = message;
     this.dispatchEvent(new CustomEvent('status', { detail: { state, message } }));
@@ -114,6 +123,7 @@ export class BleDevice extends EventTarget {
 
   async onGattDisconnected() {
     if (this.userDisconnected || this.reconnecting) return;
+    log(this.logArea, 'link dropped', this.logWho);
     this.reconnecting = true;
     try {
       for (let attempt = 1; attempt <= this.reconnectTries; attempt++) {
@@ -122,9 +132,10 @@ export class BleDevice extends EventTarget {
         if (this.userDisconnected) return;
         try {
           await this.open();
+          log(this.logArea, 'reconnected', { ...this.logWho, attempt });
           return;
-        } catch {
-          // try again
+        } catch (err) {
+          log(this.logArea, 'reconnect failed', { ...this.logWho, attempt, error: err?.message });
         }
       }
       this.setState('disconnected', 'Connection lost');
@@ -134,6 +145,7 @@ export class BleDevice extends EventTarget {
   }
 
   disconnect() {
+    if (!this.userDisconnected) log(this.logArea, 'disconnect (by the app)', this.logWho);
     this.userDisconnected = true;
     if (this.device?.gatt?.connected) this.device.gatt.disconnect();
     this.setState('disconnected');

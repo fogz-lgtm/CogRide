@@ -60,6 +60,11 @@ gears (no Click): https://fogz-lgtm.github.io/CogRide/flux/ — see
   closer, easier steps; trainer difficulty per road.
 - **Strava sign-in that heals.** If Strava stops accepting the sign-in,
   rides wait on the phone and Settings offers Reconnect; they go up after.
+- **A ride log for when something goes wrong.** The app keeps a rolling log on
+  the phone of what the trainer, Clicks, heart rate, autopilot and Strava did,
+  with a snapshot every 15 s of a ride. Settings → Diagnostics → Share sends it
+  as a text file. It holds no passwords, tokens or keys, and goes nowhere
+  unless you share it.
 - **Doesn't lose rides.** The ride is checkpointed every 30 s; if the page
   reloads mid-ride, Home offers to save it. Every ride exports as `.fit`.
 

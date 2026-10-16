@@ -17,6 +17,7 @@
 
 import { BleDevice, writeCharacteristic, subscribe, bytesOf, sameUuid, uuidOf, UUID } from './bleDevice.js';
 import { decodeFields, firstField } from '../protobuf.js';
+import { log, hex } from '../log.js';
 
 export const ZWIFT_MANUFACTURER_ID = 0x094a;
 export const ZWIFT_CUSTOM_SERVICE = '00000001-19ca-4651-86e5-fa29dcdd09d1';
@@ -137,6 +138,10 @@ export class ZwiftClick extends BleDevice {
     this.lastFrameAt = 0;
   }
 
+  get logWho() {
+    return { ...super.logWho, side: this.side ?? undefined, model: this.model ?? undefined };
+  }
+
   get displayName() {
     if (this.model === 'click-v2' && this.side) return `Click ${this.side === 'right' ? 'right (+)' : 'left (−)'}`;
     return this.device?.name || 'Click';
@@ -155,6 +160,7 @@ export class ZwiftClick extends BleDevice {
   }
 
   async setup(server) {
+    this.frameKinds = {};
     let service = null;
     for (const uuid of [ZWIFT_CUSTOM_SERVICE, ZWIFT_FC82_SERVICE]) {
       try {
@@ -175,6 +181,7 @@ export class ZwiftClick extends BleDevice {
     // Click v2 pucks have two extra "unlock" characteristics.
     if (chars.some((c) => uuidOf(c.uuid).startsWith('00000100-19ca') || uuidOf(c.uuid).startsWith('00000101-19ca'))) this.model = 'click-v2';
 
+    log('click', 'setup', { ...this.logWho, service: uuidOf(service.uuid).slice(0, 8), chars: chars.map((c) => uuidOf(c.uuid).slice(0, 8)) });
     await subscribe(asyncChar, (v) => this.handleMessage(v));
     if (syncTx) await subscribe(syncTx, (v) => this.handleMessage(v));
     this.pressed = new Set();
@@ -201,9 +208,16 @@ export class ZwiftClick extends BleDevice {
   }
 
   handleMessage(dataView) {
-    const message = parseControllerMessage(bytesOf(dataView));
+    const bytes = bytesOf(dataView);
+    const message = parseControllerMessage(bytes);
     if (!message) return;
     this.lastFrameAt = Date.now();
+    // Anything not a button state: worth seeing (the first few of each kind).
+    if (message.kind !== 'buttons' && message.kind !== 'empty') {
+      this.frameKinds ??= {};
+      const n = (this.frameKinds[message.kind] = (this.frameKinds[message.kind] ?? 0) + 1);
+      if (n <= 5) log('click', `frame ${message.kind}`, { ...this.logWho, hex: hex(bytes.slice(0, 24)) });
+    }
     switch (message.kind) {
       case 'handshake':
         if (message.legacyEncryption) {
@@ -227,6 +241,7 @@ export class ZwiftClick extends BleDevice {
         if (this.autoResetWhenLocked) this.write(RESET);
         // A right puck may say this too, and carries on: only a puck that
         // isn't known to be the right one is reported.
+        log('click', 'lock frame', { ...this.logWho, reported: this.side !== 'right' });
         if (this.side !== 'right') this.dispatchEvent(new CustomEvent('locked', { detail: { side: this.side } }));
         break;
       case 'buttons':
@@ -241,12 +256,14 @@ export class ZwiftClick extends BleDevice {
   handleButtons(pressed) {
     if (pressed.size && this.locked) {
       this.locked = false; // presses arriving: it works after all
+      log('click', 'presses after a lock frame: working', this.logWho);
       this.dispatchEvent(new CustomEvent('unlocked'));
     }
     for (const name of pressed) {
       if (this.pressed.has(name)) continue;
       if (!this.side && LEFT_PUCK_BUTTONS.has(name) && this.model === 'click-v2') this.side = 'left';
       if (!this.side && RIGHT_PUCK_BUTTONS.has(name) && this.model === 'click-v2') this.side = 'right';
+      log('click', `press ${name}`, { id: this.logWho.id, side: this.side ?? undefined });
       this.dispatchEvent(new CustomEvent('press', { detail: { button: name, shift: SHIFT_MAP[name] ?? 0 } }));
     }
     for (const name of this.pressed) {

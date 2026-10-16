@@ -17,6 +17,7 @@ import { BleDevice, writeCharacteristic, subscribe, bytesOf, sameUuid, uuidOf, U
 import * as ZP from './zwiftProtocol.js';
 import { FTMS_SERVICE, INDOOR_BIKE_DATA, CONTROL_POINT, OpCode, parseIndoorBikeData, parseControlPointResponse, encodeSetTargetPower, encodeSimulation } from './ftmsTrainer.js';
 import { gearedSimulation, estimatePhysicalRatio, ratioFor, gearValueFor, ZWIFT_CW, ZWIFT_CRR } from '../core/gearing.js';
+import { log, hex } from '../log.js';
 
 // Wahoo's own BLE services (KICKR family), for diagnostics only.
 const WAHOO_SERVICES = ['a026ee01', 'a026ee03', 'a026ee06', 'a026ee07', 'a026ee0b', 'a026ee0d'].map((p) => `${p}-0a7d-4ab3-97fa-f1500f9feb8b`);
@@ -82,6 +83,7 @@ export class SmartTrainer extends BleDevice {
         this.zpStatus = 'ok';
       } catch (err) {
         // No answer to the handshake: still ride, with gears worked out here.
+        log('trainer', 'Zwift handshake failed', { error: err.message });
         this.zpStatus = 'no-handshake';
         this.zp = null;
         if (!this.ftms) throw err;
@@ -96,6 +98,7 @@ export class SmartTrainer extends BleDevice {
     } else {
       throw new Error('This trainer has no controllable service (FTMS or Zwift).');
     }
+    log('trainer', 'path', { ...this.logWho, path: this.path, zwift: this.zpStatus, ftms: !!this.ftms, services: this.services?.map((u) => u.slice(0, 8)) });
     this.dispatchEvent(new CustomEvent('path', { detail: { path: this.path } }));
     clearInterval(this.keepalive);
     this.keepalive = setInterval(() => this.kick(), 1000);
@@ -155,7 +158,10 @@ export class SmartTrainer extends BleDevice {
       // Control was taken by someone else: ask again once.
       await this.ftmsCommand([OpCode.REQUEST_CONTROL]).catch(() => {});
     }
-    if (code !== 1) throw new Error(`Trainer refused command 0x${opcode.toString(16)} (${code})`);
+    if (code !== 1) {
+      log('trainer', 'FTMS command refused', { opcode, code });
+      throw new Error(`Trainer refused command 0x${opcode.toString(16)} (${code})`);
+    }
   }
 
   physicalRatio() {
@@ -221,6 +227,10 @@ export class SmartTrainer extends BleDevice {
   onZwiftFrame(bytes) {
     const f = ZP.parseFrame(bytes);
     if (!f) return;
+    if (f.kind === 'status' || f.kind === 'unknown' || f.kind === 'ride-on') {
+      this.zpFrames = (this.zpFrames ?? 0) + 1;
+      if (this.zpFrames <= 20) log('trainer', `zwift ${f.kind}`, { hex: hex(bytes.slice(0, 24)) });
+    }
     if (f.kind === 'ride-on') this.zp?.rideOn?.(true);
     else if (f.kind === 'trainer') {
       if (f.realGearRatio) this.dispatchEvent(new CustomEvent('physical-ratio', { detail: { ratio: f.realGearRatio } }));
@@ -233,16 +243,21 @@ export class SmartTrainer extends BleDevice {
       // second shift) is fine. Anything else means the trainer isn't
       // applying gears: after three of those, fall back to FTMS.
       if (f.gearRatioX10000 === this.recentGearValues.at(-1)) this.echoMismatches = 0;
-      else if (!this.recentGearValues.includes(f.gearRatioX10000) && ++this.echoMismatches >= 3) {
+      else if (!this.recentGearValues.includes(f.gearRatioX10000) && ++this.echoMismatches) {
+        log('trainer', 'gear read-back mismatch', { got: f.gearRatioX10000, sent: this.recentGearValues, count: this.echoMismatches });
+      }
+      if (this.echoMismatches >= 3) {
         this.fallBackToFtms('The trainer isn’t applying virtual gears; using standard trainer control instead.');
       }
     } else if (f.kind === 'lost-control') {
+      log('trainer', 'lost control (another app)');
       this.dispatchEvent(new CustomEvent('warning', { detail: { message: 'Another app took control of the trainer. Close Zwift or the Wahoo app.' } }));
     }
   }
 
   async fallBackToFtms(message) {
     if (!this.ftms || this.path === 'ftms') return;
+    log('trainer', 'falling back to FTMS', { reason: message });
     this.path = 'ftms';
     this.zpStatus = 'gears-ignored';
     this.resetSent();
@@ -266,6 +281,7 @@ export class SmartTrainer extends BleDevice {
 
   // { mode: 'sim', gradePct, gear } | { mode: 'erg', watts }
   setTarget(target) {
+    if (target.mode !== this.target.mode) log('trainer', `mode ${target.mode}`, target.mode === 'erg' ? { watts: target.watts } : { grade: target.gradePct, gear: target.gear });
     this.target = { ...target };
     this.kick();
   }
@@ -291,6 +307,7 @@ export class SmartTrainer extends BleDevice {
         }
       } while (this.wake);
     } catch (err) {
+      log('trainer', 'command failed', { path: this.path, error: err.message });
       this.dispatchEvent(new CustomEvent('warning', { detail: { message: err.message } }));
     } finally {
       this.pumping = false;

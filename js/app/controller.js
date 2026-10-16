@@ -32,7 +32,8 @@ import { summarize } from '../recorder.js';
 import { parseWorkoutText, parseZwo } from '../workouts.js';
 import * as strava from '../services/strava.js';
 import * as sound from '../ui/sound.js';
-import { APP, isFlux, storeKey } from '../variant.js';
+import { APP, isFlux, storeKey, VARIANT } from '../variant.js';
+import { log, startLog, flushLog, clearLog, logText } from '../log.js';
 
 const TICK_MS = 250;
 const CHECKPOINT_S = 30;
@@ -74,6 +75,17 @@ export class Controller extends EventTarget {
   constructor({ params = new URLSearchParams() } = {}) {
     super();
     this.params = params;
+    startLog(storeKey('log'));
+    log('app', 'start', {
+      app: APP.name,
+      variant: VARIANT,
+      build: globalThis.COGRIDE_BUILD,
+      ua: globalThis.navigator?.userAgent,
+      screen: globalThis.screen ? `${screen.width}x${screen.height}` : undefined,
+      page: globalThis.innerWidth ? `${innerWidth}x${innerHeight}` : undefined,
+    });
+    globalThis.addEventListener?.('error', (e) => log('app', 'error', { message: e.message, at: `${String(e.filename ?? '').split('/').pop()}:${e.lineno}` }));
+    globalThis.addEventListener?.('unhandledrejection', (e) => log('app', 'unhandled rejection', { message: String(e.reason?.message ?? e.reason) }));
     const prefs = loadPrefs();
     sound.setSoundLevel(prefs.sound);
     this.store = new Store({
@@ -279,6 +291,7 @@ export class Controller extends EventTarget {
   }
 
   explainBleError(err) {
+    log('ble', 'connect failed', { name: err?.name, message: err?.message });
     if (!err || err.name === 'NotFoundError' || /cancel/i.test(err.message)) {
       // Cancelled picker (Bluefy also says NotFound when Bluetooth permission is off).
       return null;
@@ -516,11 +529,13 @@ export class Controller extends EventTarget {
       this.publishSoon();
     });
     on('autopilot-target', (d) => {
+      log('ride', 'autopilot target', { hr: d.targetHr });
       if (!this.quiet) sound.playAutopilotNudge();
       this.emit('autopilot-target', d);
       this.publishSoon();
     });
     on('interval', (d) => {
+      log('ride', 'interval', { index: d.index, label: d.step?.label, type: d.step?.type, power: d.step?.power ?? d.step?.from });
       if (d.index > 0) {
         const f = d.step.type === 'steady' ? d.step.power : d.step.type === 'ramp' ? d.step.from : null;
         const prev = this.engine.workout?.steps[d.index - 1];
@@ -540,6 +555,8 @@ export class Controller extends EventTarget {
       this.toast({ title: 'Workout done.', body: 'Keep riding, or pause to end and save.', ms: 9000 });
     });
     on('bailout', (d) => {
+      const snap = this.engine.snapshot();
+      log('ride', d.active ? 'bail-out: ERG let go' : 'bail-out over: ERG back', { w: snap.powerInstant, rpm: snap.hasCadence ? snap.cadence : null, target: snap.ergTarget });
       const auto = this.state.plan?.kind === 'autopilot';
       if (d.active) {
         this.toast(
@@ -643,12 +660,27 @@ export class Controller extends EventTarget {
 
   start() {
     if (this.state.rideState !== 'ready') return;
+    const { plan, route, prefs, devices } = this.state;
+    log('ride', 'start', {
+      plan: plan?.kind,
+      title: plan?.title,
+      route: route?.name,
+      ftp: prefs.ftp,
+      zone2: zone2(prefs),
+      difficulty: this.engineSettingsNow().difficulty,
+      gears: prefs.gearTable,
+      trainer: { state: devices.trainer.state, path: devices.trainer.path, name: devices.trainer.name },
+      clicks: devices.click.count,
+      hr: devices.hr.state,
+    });
+    this.logTick = 0;
     this.engine.start();
     this.set({ rideState: 'riding' });
   }
 
   pause() {
     if (this.state.rideState !== 'riding') return;
+    log('ride', 'pause');
     this.engine.pause();
     sound.playPause(false);
     this.saveCheckpoint();
@@ -658,6 +690,7 @@ export class Controller extends EventTarget {
   resume() {
     if (this.state.rideState === 'ready') return this.start();
     if (this.state.rideState !== 'paused') return;
+    log('ride', 'resume');
     sound.unlockAudio();
     this.requestWakeLock();
     this.engine.resume();
@@ -686,6 +719,7 @@ export class Controller extends EventTarget {
   }
 
   discard() {
+    log('ride', 'discard');
     this.engine.finish();
     history.clearCheckpoint();
     this.leave();
@@ -693,6 +727,7 @@ export class Controller extends EventTarget {
   }
 
   finish() {
+    log('ride', 'finish', { movingS: Math.round(this.engine.movingTime), km: Math.round(this.engine.physics.distance / 100) / 10 });
     const { plan, route, prefs, recent } = this.state;
     const photo = this.capturePhoto?.() ?? null;
     const ride = this.engine.finish();
@@ -1013,8 +1048,32 @@ export class Controller extends EventTarget {
     }
   }
 
+  // Every 15 s while riding: enough to replay what the trainer was asked to
+  // do and what the rider was doing.
+  logSnapshot(snap) {
+    const ap = snap.autopilot;
+    const d = this.state.devices;
+    const r1 = (x) => (x == null ? undefined : Math.round(x * 10) / 10);
+    log('ride', 'tick', {
+      mode: snap.mode,
+      w: snap.power,
+      rpm: snap.hasCadence ? snap.cadence : null,
+      hr: snap.heartRate,
+      target: snap.ergTarget ?? undefined,
+      ap: ap ? { w: ap.watts, status: ap.status, hr: ap.targetHr, capped: ap.capped || undefined } : undefined,
+      gear: APP.virtualGears ? snap.gear : undefined,
+      grade: r1(snap.grade),
+      felt: r1(snap.feltGrade),
+      kmh: r1(snap.speed * 3.6),
+      km: Math.round(snap.distance / 100) / 10,
+      dev: `${d.trainer.state}${d.trainer.path ? `/${d.trainer.path}` : ''} clicks:${d.click.count ?? 0} hr:${d.hr.state}`,
+    });
+  }
+
   everySecond(snap) {
     const plan = this.state.plan;
+    this.logTick = (this.logTick ?? 0) + 1;
+    if (this.logTick % 15 === 0) this.logSnapshot(snap);
     // Ramp test: over when the cadence collapses after the ramp has begun.
     if (this.rampDetector && this.rampFtp == null && snap.workout) {
       const rampStarted = snap.workout.clock > 300;
@@ -1076,6 +1135,7 @@ export class Controller extends EventTarget {
   }
 
   toast({ kind = 'info', title, body = '', action = null, ms = 6000 }) {
+    log('ui', 'toast', { title, body: body || undefined });
     clearTimeout(this.toastTimer);
     const toast = { id: Date.now(), kind, title, body, action };
     this.set({ toast });
@@ -1240,6 +1300,47 @@ export class Controller extends EventTarget {
     });
   }
 
+  // ---------------------------------------------------------------- diagnostics
+
+  // The ride log as a text file, via the share sheet (AirDrop, Messages,
+  // Files, a chat…), or copied if this browser can't share files.
+  async shareLog() {
+    flushLog();
+    const { prefs, devices } = this.state;
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const name = `${APP.storage}-log-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}.txt`;
+    const text = logText([
+      `${APP.name} diagnostics · ${now.toString()}`,
+      `Build ${globalThis.COGRIDE_BUILD || 'dev'} · ${navigator.userAgent}`,
+      `Settings: FTP ${prefs.ftp} W · Zone 2 ${zone2(prefs).min}–${zone2(prefs).max} bpm · difficulty ${Math.round(prefs.difficulty * 100)} % · gears ${prefs.gearTable || 'zwift'} · weight ${prefs.riderKg} kg`,
+      `Now: trainer ${devices.trainer.state}${devices.trainer.path ? ` (${devices.trainer.path})` : ''} · clicks ${devices.click.count ?? 0} · heart ${devices.hr.state} · Strava ${this.state.strava.connected ? (this.state.strava.needsReconnect ? 'needs sign-in' : 'connected') : 'not connected'}`,
+    ]);
+    log('app', 'log shared');
+    try {
+      const file = new File([text], name, { type: 'text/plain' });
+      if (navigator.canShare?.({ files: [file] })) return await navigator.share({ files: [file], title: `${APP.name} log` });
+    } catch (err) {
+      if (err?.name === 'AbortError') return; // closed the share sheet
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      this.toast({ title: 'Log copied', body: 'Paste it into a message or a chat.', ms: 5000 });
+    } catch {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+  }
+
+  clearDiagnostics() {
+    clearLog();
+    log('app', 'log cleared');
+  }
+
   disconnectStrava() {
     strava.disconnect();
     this.set({ strava: this.stravaState() });
@@ -1276,12 +1377,15 @@ export class Controller extends EventTarget {
   onVisibility() {
     const riding = this.state.rideState === 'riding' || this.state.rideState === 'paused';
     if (document.visibilityState === 'hidden') {
+      log('app', 'hidden (another app in front)', { riding: riding || undefined });
+      this.hiddenAt = Date.now();
       if (riding) {
         this.saveCheckpoint();
         this.awayAt = Date.now();
       }
       return;
     }
+    log('app', 'visible again', { awayS: this.hiddenAt ? Math.round((Date.now() - this.hiddenAt) / 1000) : undefined });
     sound.resumeAudio();
     if (!riding) this.refreshStrava();
     if (this.state.screen === 'ride') this.requestWakeLock();
