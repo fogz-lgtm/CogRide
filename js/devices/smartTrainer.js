@@ -13,7 +13,7 @@
 // Commands go through one serialized queue and are coalesced: only the
 // latest gear/grade/target matters, so rapid shifting never backs up.
 
-import { BleDevice, writeCharacteristic, subscribe, bytesOf, UUID } from './bleDevice.js';
+import { BleDevice, writeCharacteristic, subscribe, bytesOf, sameUuid, uuidOf, UUID } from './bleDevice.js';
 import * as ZP from './zwiftProtocol.js';
 import { FTMS_SERVICE, INDOOR_BIKE_DATA, CONTROL_POINT, OpCode, parseIndoorBikeData, parseControlPointResponse, encodeSetTargetPower, encodeSimulation } from './ftmsTrainer.js';
 import { gearedSimulation, estimatePhysicalRatio, ratioFor, gearValueFor, ZWIFT_CW, ZWIFT_CRR } from '../core/gearing.js';
@@ -70,7 +70,7 @@ export class SmartTrainer extends BleDevice {
     this.services = server.getPrimaryServices
       ? await server
           .getPrimaryServices()
-          .then((list) => list.map((s) => s.uuid))
+          .then((list) => list.map((s) => uuidOf(s.uuid)))
           .catch(() => null)
       : null;
     this.ftms = await this.setupFtms(server).catch(() => null);
@@ -178,7 +178,7 @@ export class SmartTrainer extends BleDevice {
     }
     if (!service) return null;
     const chars = await service.getCharacteristics();
-    const byUuid = (u) => chars.find((c) => c.uuid === u);
+    const byUuid = (u) => chars.find((c) => sameUuid(c.uuid, u));
     const asyncChar = byUuid(ZP.ZP_ASYNC);
     const rx = byUuid(ZP.ZP_SYNC_RX);
     const tx = byUuid(ZP.ZP_SYNC_TX);

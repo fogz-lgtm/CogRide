@@ -12,7 +12,7 @@
 // A locked left puck is let go (resetting it only re-locks it a minute
 // later, round and round); the app explains how to unlock it via Zwift.
 
-import { BleDevice, writeCharacteristic, subscribe, bytesOf, UUID } from './bleDevice.js';
+import { BleDevice, writeCharacteristic, subscribe, bytesOf, sameUuid, uuidOf, UUID } from './bleDevice.js';
 import { decodeFields, firstField } from '../protobuf.js';
 
 export const ZWIFT_MANUFACTURER_ID = 0x094a;
@@ -161,13 +161,13 @@ export class ZwiftClick extends BleDevice {
     if (!service) throw new Error("This doesn't look like a Zwift controller (no Zwift service found).");
 
     const chars = await service.getCharacteristics();
-    const byUuid = (uuid) => chars.find((c) => c.uuid === uuid);
+    const byUuid = (uuid) => chars.find((c) => sameUuid(c.uuid, uuid));
     const asyncChar = byUuid(ASYNC_CHAR) ?? chars.find((c) => c.properties.notify);
     this.syncRx = byUuid(SYNC_RX_CHAR) ?? chars.find((c) => c.properties.write || c.properties.writeWithoutResponse);
     const syncTx = byUuid(SYNC_TX_CHAR) ?? chars.find((c) => c.properties.indicate);
     if (!asyncChar || !this.syncRx) throw new Error('Zwift controller characteristics not found.');
     // Click v2 pucks have two extra "unlock" characteristics.
-    if (chars.some((c) => c.uuid.startsWith('00000100-19ca') || c.uuid.startsWith('00000101-19ca'))) this.model = 'click-v2';
+    if (chars.some((c) => uuidOf(c.uuid).startsWith('00000100-19ca') || uuidOf(c.uuid).startsWith('00000101-19ca'))) this.model = 'click-v2';
 
     await subscribe(asyncChar, (v) => this.handleMessage(v));
     if (syncTx) await subscribe(syncTx, (v) => this.handleMessage(v));

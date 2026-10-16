@@ -386,6 +386,9 @@ export function SettingsSheet({ c, s }) {
 
 // ---------------------------------------------------------------- devices
 
+// 0000180a-0000-1000-8000-00805f9b34fb → 180a; anything else → its first 8.
+const shortUuid = (u) => /^0000([0-9a-f]{4})-0000-1000-8000-00805f9b34fb$/i.exec(u)?.[1] ?? u.slice(0, 8);
+
 function trainerLine(d) {
   if (d.sim) {
     return isFlux
@@ -414,7 +417,7 @@ export function DeviceSheet({ c, s, which }) {
           }[d.zpStatus] ?? 'It wasn’t available on this connection.'
         }${' '}
         Shifting still works — CogRide turns each gear into resistance itself, so it feels the same, just a moment slower to respond.
-        ${d.services && html`<div class="svcs">Services: ${d.services.map((u) => (u.startsWith('0000') ? u.slice(4, 8) : u.slice(0, 8))).join(' · ')}</div>`}
+        ${d.services && html`<div class="svcs">Services: ${d.services.map(shortUuid).join(' · ')}</div>`}
       </div>`}
       <div class="btnrow">
         <button class="btn sec" onClick=${() => (c.disconnectTrainer(), c.closeSheet())}>Disconnect</button>

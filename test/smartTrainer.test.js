@@ -9,7 +9,7 @@ const hex = (arr) => arr.map((b) => b.toString(16).padStart(2, '0')).join(' ');
 const tick = (ms = 0) => new Promise((r) => setTimeout(r, ms));
 
 // A KICKR-like trainer: Zwift service + FTMS. Optionally ignores gears.
-function fakeKickr({ honourGears = true, zwift = true } = {}) {
+function fakeKickr({ honourGears = true, zwift = true, upper = false } = {}) {
   let lastGear = 24000;
   const asyncChar = new FakeChar(ZP.ZP_ASYNC);
   const tx = new FakeChar(ZP.ZP_SYNC_TX);
@@ -29,6 +29,8 @@ function fakeKickr({ honourGears = true, zwift = true } = {}) {
   const bikeData = new FakeChar(UUID.INDOOR_BIKE_DATA);
   const services = [new FakeService(UUID.FTMS, [cp, bikeData])];
   if (zwift) services.push(new FakeService(ZP.ZP_SERVICE, [asyncChar, rx, tx]));
+  // Bluefy reports iOS's uppercase UUIDs.
+  if (upper) for (const s of services) [s, ...s.chars].forEach((x) => (x.uuid = x.uuid.toUpperCase()));
   return { server: new FakeServer(services), rx, tx, cp, bikeData, asyncChar };
 }
 
@@ -126,5 +128,13 @@ test('FTMS-only trainer gets geared simulation and ERG', async () => {
   t.setTarget({ mode: 'erg', watts: 200 });
   await tick(10);
   assert.deepEqual(k.cp.writes.at(-1), [0x05, 200, 0]);
+  clearInterval(t.keepalive);
+});
+
+test('Bluefy’s uppercase UUIDs still find Zwift’s virtual shifting', async () => {
+  const k = fakeKickr({ upper: true });
+  const t = await connected(k);
+  assert.equal(t.zpStatus, 'ok');
+  assert.equal(t.path, 'zwift');
   clearInterval(t.keepalive);
 });

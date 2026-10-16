@@ -10,7 +10,7 @@
 // gear field is ignored: the rider shifts the bike) or { mode: 'erg', watts }.
 // Commands are coalesced like SmartTrainer's: only the latest target matters.
 
-import { BleDevice, writeCharacteristic, subscribe, bytesOf, UUID } from './bleDevice.js';
+import { BleDevice, writeCharacteristic, subscribe, bytesOf, uuidOf, UUID } from './bleDevice.js';
 import { FTMS_SERVICE, INDOOR_BIKE_DATA, CONTROL_POINT, OpCode, parseIndoorBikeData, parseControlPointResponse, encodeSetTargetPower, encodeSimulation } from './ftmsTrainer.js';
 import { ZWIFT_CW, ZWIFT_CRR } from '../core/gearing.js';
 
@@ -196,7 +196,7 @@ export class TacxTrainer extends BleDevice {
     this.services = server.getPrimaryServices
       ? await server
           .getPrimaryServices()
-          .then((list) => list.map((s) => s.uuid))
+          .then((list) => list.map((s) => uuidOf(s.uuid)))
           .catch(() => null)
       : null;
     this.fec = await this.setupFec(server).catch(() => null);

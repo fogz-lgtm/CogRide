@@ -33,7 +33,7 @@ export class FakeService {
     this.chars = chars;
   }
   async getCharacteristic(uuid) {
-    const c = this.chars.find((x) => x.uuid === uuid);
+    const c = this.chars.find((x) => x.uuid.toLowerCase() === uuid.toLowerCase()); // lookups ignore case, like iOS
     if (!c) throw new Error(`no characteristic ${uuid}`);
     return c;
   }
@@ -48,7 +48,7 @@ export class FakeServer {
     this.connected = true;
   }
   async getPrimaryService(uuid) {
-    const s = this.services.find((x) => x.uuid === uuid);
+    const s = this.services.find((x) => x.uuid.toLowerCase() === uuid.toLowerCase());
     if (!s) throw new Error(`no service ${uuid}`);
     return s;
   }

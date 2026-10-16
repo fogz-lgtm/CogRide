@@ -48,6 +48,11 @@ export async function subscribe(characteristic, handler) {
   await characteristic.startNotifications();
 }
 
+// UUIDs as the page sees them. Web Bluetooth says lowercase, but Bluefy hands
+// over iOS's uppercase ones, so compare (and keep) them lowercased.
+export const uuidOf = (u) => String(u ?? '').toLowerCase();
+export const sameUuid = (a, b) => uuidOf(a) === uuidOf(b);
+
 export function bytesOf(dataView) {
   return new Uint8Array(dataView.buffer, dataView.byteOffset, dataView.byteLength);
 }
