@@ -54,7 +54,9 @@ function Tiles({ c, s }) {
   const clickLine = click.state === 'ready' ? (click.count === 2 ? 'Both pucks' : 'Ready') : null;
   const clickHint =
     click.state === 'ready'
-      ? click.v2 && click.count === 1
+      ? click.leftLocked
+        ? 'Left locked · + and B shift'
+        : click.v2 && click.count === 1
         ? 'Tap to add the other'
         : click.battery != null
           ? `Battery ${click.battery}%`

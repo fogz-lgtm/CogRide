@@ -8,9 +8,12 @@
 // Click v2 is two separate Bluetooth devices, both named "Zwift Click": the
 // right puck (+, A/B/Y/Z) and the left puck (−, D-pad). Zwift locks the left
 // puck to its own app about a minute after another app connects (unless Zwift
-// unlocked it in the last ~24 h). So B on the right puck also shifts down.
-// A locked left puck is let go (resetting it only re-locks it a minute
-// later, round and round); the app explains how to unlock it via Zwift.
+// unlocked it recently); the right puck keeps working. So B on the right puck
+// also shifts down. The lock frame is only noted, never acted on: dropping
+// the puck (as this once did) also dropped right pucks that send it and
+// carry on, and resetting it only re-locks it a minute later.
+// A puck that drops on its own has usually gone to sleep: it's retried for
+// two minutes, so a press on it brings it straight back.
 
 import { BleDevice, writeCharacteristic, subscribe, bytesOf, sameUuid, uuidOf, UUID } from './bleDevice.js';
 import { decodeFields, firstField } from '../protobuf.js';
@@ -121,6 +124,9 @@ export function parseControllerMessage(bytes) {
 export class ZwiftClick extends BleDevice {
   constructor({ autoResetWhenLocked = false, showAll = false } = {}) {
     super('Click');
+    this.reconnectTries = 30;
+    this.reconnectDelayMs = () => 4000;
+    this.reconnectMessage = () => 'Press a button to wake it';
     this.showAll = showAll;
     this.pressed = new Set();
     this.battery = null;
@@ -217,12 +223,11 @@ export class ZwiftClick extends BleDevice {
         break;
       case 'locked':
         if (this.locked) break;
-        this.side = 'left';
         this.locked = true;
-        this.dispatchEvent(new CustomEvent('locked', { detail: { willReset: this.autoResetWhenLocked } }));
         if (this.autoResetWhenLocked) this.write(RESET);
-        // Otherwise stop talking to it, so it doesn't reconnect and re-lock forever.
-        else setTimeout(() => this.disconnect(), 0);
+        // A right puck may say this too, and carries on: only a puck that
+        // isn't known to be the right one is reported.
+        if (this.side !== 'right') this.dispatchEvent(new CustomEvent('locked', { detail: { side: this.side } }));
         break;
       case 'buttons':
         if (message.model) this.model = message.model;
@@ -234,6 +239,10 @@ export class ZwiftClick extends BleDevice {
   }
 
   handleButtons(pressed) {
+    if (pressed.size && this.locked) {
+      this.locked = false; // presses arriving: it works after all
+      this.dispatchEvent(new CustomEvent('unlocked'));
+    }
     for (const name of pressed) {
       if (this.pressed.has(name)) continue;
       if (!this.side && LEFT_PUCK_BUTTONS.has(name) && this.model === 'click-v2') this.side = 'left';

@@ -66,6 +66,10 @@ export class BleDevice extends EventTarget {
     this.message = '';
     this.userDisconnected = false;
     this.reconnecting = false;
+    // How hard to try after the link drops: tries, and the wait before each.
+    this.reconnectTries = 5;
+    this.reconnectDelayMs = (attempt) => 1000 * attempt;
+    this.reconnectMessage = (attempt) => `Reconnecting (${attempt}/${this.reconnectTries})…`;
     this.handleDisconnect = () => this.onGattDisconnected();
   }
 
@@ -112,9 +116,9 @@ export class BleDevice extends EventTarget {
     if (this.userDisconnected || this.reconnecting) return;
     this.reconnecting = true;
     try {
-      for (let attempt = 1; attempt <= 5; attempt++) {
-        this.setState('connecting', `Reconnecting (${attempt}/5)…`);
-        await delay(1000 * attempt);
+      for (let attempt = 1; attempt <= this.reconnectTries; attempt++) {
+        this.setState('connecting', this.reconnectMessage(attempt));
+        await delay(this.reconnectDelayMs(attempt));
         if (this.userDisconnected) return;
         try {
           await this.open();

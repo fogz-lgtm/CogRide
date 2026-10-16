@@ -364,11 +364,12 @@ export class Controller extends EventTarget {
     const update = () => this.updateClicks();
     c.addEventListener('status', update);
     c.addEventListener('battery', update);
+    c.addEventListener('unlocked', update);
     c.addEventListener('press', (e) => this.press(e.detail.shift));
     c.addEventListener('release', (e) => this.release(e.detail.shift));
     c.addEventListener('locked', () => {
-      // Zwift locked the left puck: let it go and explain once.
-      this.clicks = this.clicks.filter((o) => o !== c);
+      // Zwift locked (most likely) the left puck: it stays connected —
+      // presses come back if it's unlocked — and this is explained once.
       this.updateClicks();
       if (!this.lockExplained) {
         this.lockExplained = true;
@@ -405,6 +406,8 @@ export class Controller extends EventTarget {
       v2,
       battery: batteries.length ? Math.min(...batteries) : null,
       name: ready.length === 2 ? 'Both pucks' : ready[0]?.displayName || '',
+      // A puck Zwift has locked stays connected but sends nothing.
+      leftLocked: ready.some((c) => c.locked && c.side !== 'right'),
       message: '',
       known: live.length,
     });

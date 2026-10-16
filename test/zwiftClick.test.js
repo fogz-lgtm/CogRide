@@ -54,7 +54,7 @@ function fakeClickV2() {
   return { server: new FakeServer([new FakeService(ZWIFT_CUSTOM_SERVICE, [asyncChar, rx, tx, unlock])]), asyncChar, rx, tx };
 }
 
-test('Click v2 puck: handshake, press/release edges, B shifts down, a lock lets the puck go', async () => {
+test('Click v2 puck: handshake, press/release edges, B shifts down, a right puck stays connected through a lock frame', async () => {
   const f = fakeClickV2();
   const click = new ZwiftClick();
   const events = [];
@@ -76,13 +76,39 @@ test('Click v2 puck: handshake, press/release edges, B shifts down, a lock lets 
   assert.equal(click.side, 'right');
   assert.equal(click.displayName, 'Click right (+)');
 
+  // The right puck can send the lock frame too, and keeps working: it must
+  // not be dropped (this used to disconnect it a minute into every ride).
   const writes = f.rx.writes.length;
   f.asyncChar.emit([0xff, 0x05, 0x00, 0xea, 0x05]);
-  f.asyncChar.emit([0xff, 0x05, 0x00, 0xea, 0x05]); // said once only
   await new Promise((r) => setTimeout(r, 5));
-  assert.deepEqual(events.filter((e) => e[0] === 'locked'), [['locked']]);
-  // No reset (it only re-locks a minute later, forever): the puck is let go.
-  assert.ok(f.rx.writes.slice(writes).every((w) => w[0] !== 0x18));
-  assert.equal(click.state, 'disconnected');
-  assert.equal(click.userDisconnected, true);
+  assert.equal(click.state, 'connected');
+  assert.equal(click.userDisconnected, false);
+  assert.deepEqual(events.filter((e) => e[0] === 'locked'), []);
+  assert.ok(f.rx.writes.slice(writes).every((w) => w[0] !== 0x18)); // no reset
+  f.asyncChar.emit([0x23, 0x08, 0xff, 0xdf, 0xff, 0xff, 0x0f]); // + still shifts
+  assert.ok(events.slice(-2).some((e) => e[0] === 'press' && e[1] === 'plus'));
+  clearInterval(click.poll);
+});
+
+test('a lock frame from the left (or an unknown) puck is reported once, and it stays connected', async () => {
+  const f = fakeClickV2();
+  const click = new ZwiftClick();
+  const locks = [];
+  click.addEventListener('locked', (e) => locks.push(e.detail.side));
+  await click.setup(f.server);
+  click.state = 'connected';
+  await new Promise((r) => setTimeout(r, 10));
+  f.asyncChar.emit([0x23, 0x08, 0xff, 0xfd, 0xff, 0xff, 0x0f]); // − (0x100 clear: the left puck)
+  f.asyncChar.emit([0x23, 0x08, 0xff, 0xff, 0xff, 0xff, 0x0f]);
+  f.asyncChar.emit([0xff, 0x05, 0x00, 0xea, 0x05]);
+  f.asyncChar.emit([0xff, 0x05, 0x00, 0xfa, 0x05]); // said once only
+  assert.deepEqual(locks, ['left']);
+  assert.equal(click.state, 'connected');
+  clearInterval(click.poll);
+});
+
+test('a Click that drops (asleep) is retried for two minutes', () => {
+  const click = new ZwiftClick();
+  assert.ok(click.reconnectTries * click.reconnectDelayMs(1) >= 120000);
+  assert.match(click.reconnectMessage(1), /press a button/i);
 });
