@@ -8,7 +8,7 @@ import { Scene, WorkoutProfile } from './charts.js';
 import { clock, U } from './format.js';
 import { sparkline } from '../core/routeLibrary.js';
 import { regionFor, timeOfDayNow } from '../world/themes.js';
-import { AUTOPILOT_MINUTES, autopilotPlan, vertPlan } from '../app/plans.js';
+import { AUTOPILOT_MINUTES, autopilotPlan, vertPlan, ERG_ROAD } from '../app/plans.js';
 import { loadBest } from '../app/history.js';
 import { totalDuration } from '../workouts.js';
 import { estimateTss } from './home.js';
@@ -112,10 +112,11 @@ export function PlanSheet({ c, s, sheet }) {
             ['TSS', `~${estimateTss(w)}`, ''],
             ['Intervals', w.steps.length, ''],
           ];
-    extra = html`<div class="section"><div class="k">Ride it on</div><${RouteChoice} s=${s} value=${routeId} onChange=${setRouteId} /></div>
+    const flat = s.catalog.find((d) => d.id === ERG_ROAD);
+    extra = html`<p class="sub">Rides on ${flat ? flat.name.replace(/\s*\(.*\)$/, '') : 'a flat loop'}: ERG holds your watts whatever the road does, so a flat road keeps your speed and miles true to the effort.</p>
       ${plan.kind === 'ramp' && html`<p class="sub">ERG holds each step. When you can’t keep the pedals turning, the test ends by itself and your new FTP is 75 % of your best minute.</p>`}
       ${plan.workout && !plan.workout.builtIn && html`<button class="btn danger small" onClick=${() => (c.deleteWorkout(plan.workout.id), c.closeSheet())}>Delete this workout</button>`}`;
-    go = { ...plan, routeId };
+    go = { ...plan, routeId: ERG_ROAD };
   } else if (plan.kind === 'autopilot') {
     const z = s.prefs.hrZones[1];
     figure = html`<${Scene} region="bayarea" tod=${tod} seed="z2" w=${366} h=${150} />`;
@@ -151,7 +152,7 @@ export function PlanSheet({ c, s, sheet }) {
   const remember = () => {
     if (plan.kind === 'free') c.setPrefs({ freeRouteId: routeId });
     else if (plan.kind === 'vert') c.setPrefs({ vertRouteId: routeId, vertGoalM: goalM });
-    else if (!['route', 'run', 'gpx', 'segment'].includes(plan.kind)) c.setPrefs({ workoutRouteId: routeId });
+    else if (plan.kind === 'autopilot') c.setPrefs({ workoutRouteId: routeId });
   };
   // The road this ride is on: its own trainer difficulty and your best time there.
   const roadKey = plan.kind === 'route' ? plan.def?.id ?? plan.id : plan.route?.id ?? (['vert', 'free'].includes(plan.kind) ? routeId : null);
@@ -339,7 +340,7 @@ export function SettingsSheet({ c, s }) {
       <${Row} title="Sounds"><${Seg} value=${p.sound} options=${[['normal', 'Normal'], ['quiet', 'Quiet'], ['off', 'Off']]} onChange=${(v) => c.setPrefs({ sound: v })} /><//>
       <${Row} title="Cues in TV mode" sub="Mix under your show; ring switch must be on"><${Toggle} label="Cues in TV mode" on=${p.tvSound !== 'off'} onChange=${(on) => c.setPrefs({ tvSound: on ? 'on' : 'off' })} /><//>
       <${Row} title="Light" sub="Auto follows your clock"><${Seg} value=${p.timeOfDay} options=${[['auto', 'Auto'], ['day', 'Day'], ['golden', 'Gold'], ['dusk', 'Dusk'], ['night', 'Night']]} onChange=${(v) => c.setPrefs({ timeOfDay: v })} /><//>
-      <${Row} title="Workouts ride on">
+      <${Row} title="Zone 2 autopilot rides on" sub="Workouts always ride a flat loop">
         <label class="field"><select class="wide" value=${p.workoutRouteId} onChange=${(e) => c.setPrefs({ workoutRouteId: e.target.value })}>${climbs.map((d) => html`<option value=${d.id}>${d.name}</option>`)}</select></label>
       <//>
     </div>

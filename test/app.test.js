@@ -106,3 +106,15 @@ test('TV mode parks the show where iOS puts its largest Picture in Picture windo
   const desktop = pipBox({ screenW: 1920, screenH: 1080, innerW: 1280, innerH: 720 });
   assert.ok(desktop.x >= 1280 * 0.42 && desktop.x + 200 < 1280);
 });
+
+test('workouts and the ramp test always ride the flat loop; other rides keep their road', async () => {
+  const { roadIdFor, ERG_ROAD, workoutPlan, rampPlan, autopilotPlan, allWorkouts } = await import('../js/app/plans.js');
+  const prefs = { workoutRouteId: 'tourmalet-luz', freeRouteId: 'fogline-coast' };
+  assert.equal(ERG_ROAD, 'glasswater-lakes');
+  assert.equal(roadIdFor(workoutPlan(allWorkouts()[0]), prefs), ERG_ROAD);
+  assert.equal(roadIdFor({ ...workoutPlan(allWorkouts()[0]), routeId: 'tourmalet-luz' }, prefs), ERG_ROAD); // even if a climb was remembered
+  assert.equal(roadIdFor(rampPlan(200), prefs), ERG_ROAD);
+  assert.equal(roadIdFor(autopilotPlan(45), prefs), 'tourmalet-luz');
+  assert.equal(roadIdFor({ kind: 'free', id: 'free' }, prefs), 'fogline-coast');
+  assert.equal(roadIdFor({ kind: 'route', id: 'alpe-dhuez' }, prefs), 'alpe-dhuez');
+});

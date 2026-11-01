@@ -42,6 +42,19 @@ export function rampPlan(ftp) {
   return { kind: 'ramp', id: 'ftp-ramp', title: 'FTP ramp test', workout, minutes: 20 };
 }
 
+// Workouts and the ramp test always ride a flat loop. In ERG the trainer
+// holds the watts whatever the road does, so on a climb the effort stays
+// the same and only the speed drops — 45 minutes up the Tourmalet at 140 W
+// came to under 4 miles. On the flat, speed and distance match the effort.
+export const ERG_ROAD = 'glasswater-lakes';
+export const ridesFlat = (plan) => plan?.kind === 'workout' || plan?.kind === 'ramp';
+
+// The road a plan rides (by catalog id), when it has no road of its own.
+export function roadIdFor(plan, prefs = {}) {
+  if (ridesFlat(plan)) return ERG_ROAD;
+  return plan.routeId ?? (plan.kind === 'route' ? plan.id : plan.kind === 'free' ? prefs.freeRouteId : prefs.workoutRouteId);
+}
+
 // ---------------------------------------------------------------- words
 
 const ONES = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];

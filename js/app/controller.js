@@ -10,7 +10,7 @@
 import { Store } from './store.js';
 import { loadPrefs, savePrefs, engineSettings, zone2, hrZoneIndex } from './prefs.js';
 import * as history from './history.js';
-import { rideHeadline, rampPlan, workoutPlan } from './plans.js';
+import { rideHeadline, rampPlan, workoutPlan, roadIdFor, ridesFlat, ERG_ROAD } from './plans.js';
 import { RideEngine } from '../engine/rideEngine.js';
 import { SmartTrainer } from '../devices/smartTrainer.js';
 import { TacxTrainer } from '../devices/tacxTrainer.js';
@@ -604,7 +604,7 @@ export class Controller extends EventTarget {
     this.salvageCheckpoint();
     const prefs = this.state.prefs;
     const e = this.engine;
-    const roadKey = plan.routeId ?? plan.route?.id ?? (plan.kind === 'route' ? plan.id : null);
+    const roadKey = ridesFlat(plan) ? ERG_ROAD : plan.routeId ?? plan.route?.id ?? (plan.kind === 'route' ? plan.id : null);
     this.difficultyOverride = roadKey ? prefs.routeDifficulty?.[roadKey] ?? null : null;
     e.updateSettings(this.engineSettingsNow());
     e.setAutopilot(null);
@@ -639,10 +639,7 @@ export class Controller extends EventTarget {
     const prefs = this.state.prefs;
     try {
       let route = plan.route ?? null;
-      if (!route) {
-        const id = plan.routeId ?? (plan.kind === 'route' ? plan.id : plan.kind === 'free' ? prefs.freeRouteId : prefs.workoutRouteId);
-        route = await loadRoute(id);
-      }
+      if (!route) route = await loadRoute(roadIdFor(plan, prefs));
       if (this.state.plan !== plan) return;
       this.engine.setRoute(route);
       // Race your best over this road (one attempt per climb or per lap).
