@@ -47,3 +47,35 @@ test('Alpe d’Huez: 21 hairpins in the real road', async () => {
   assert.equal(line.length, 10);
   assert.ok(line.at(-1) > line[0] + 1000);
 });
+
+test('punchy routes: real loops on real roads, with named climbs and cobbles', async () => {
+  const catalog = await loadCatalog(fetchFile);
+  const want = {
+    'flanders-finale': ['Koppenberg', 'Oude Kwaremont', 'Paterberg'],
+    'amstel-limburg': ['Keutenberg', 'Eyserbosweg', 'Fromberg', 'Cauberg'],
+    'three-bears': ['Castro Ranch Rd', 'Mama Bear', 'Papa Bear', 'Baby Bear'],
+  };
+  for (const [id, names] of Object.entries(want)) {
+    const def = catalog.find((d) => d.id === id);
+    assert.ok(def?.loop && def.geometry, id);
+    assert.deepEqual(def.climbs.map((k) => k.name), names);
+    const r = await loadRoute(id, fetchFile);
+    assert.ok(r.lat && r.lon, `${id} follows the real road`);
+    for (const k of def.climbs) {
+      assert.ok(k.startM < k.endM && k.endM <= def.lengthM, `${id} ${k.name}`);
+      const rise = r.elevationAt(k.endM) - r.elevationAt(k.startM);
+      assert.ok(Math.abs(rise - k.gainM) < 4, `${id} ${k.name} rises ${rise.toFixed(1)} vs ${k.gainM}`);
+      assert.ok(k.max100mPct >= k.avgPct);
+    }
+  }
+  const flanders = await loadRoute('flanders-finale', fetchFile);
+  for (const k of flanders.climbs) assert.equal(flanders.surfaceAt((k.startM + k.endM) / 2), 'cobbles', k.name);
+  const kopp = flanders.climbs[0];
+  assert.ok(kopp.avgPct > 9 && kopp.max100mPct > 15, 'the Koppenberg is a wall');
+  // Real places: Kluisbergen, Valkenburg, Orinda, Albany.
+  assert.ok(Math.abs(flanders.lat[0] - 50.78) < 0.03 && Math.abs(flanders.lon[0] - 3.53) < 0.06);
+  const marin = catalog.find((d) => d.id === 'marin-ave');
+  assert.equal(marin.loop, false);
+  assert.ok(marin.climbs[0].avgPct > 14, 'Marin averages ~15 % from the circle');
+  assert.ok(marin.maxGradientPct > 20);
+});

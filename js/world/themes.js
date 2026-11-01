@@ -83,6 +83,10 @@ const ROUTE_ART = {
   'hawk-hill': { biome: 'coast', signs: 'us', ocean: { from: 'end', bearing: 205, offset: 650 }, lighthouse: { from: 'end', bearing: 235, dist: 1500 }, cityLights: { bearing: 120, spread: 40 } },
   'fogline-coast': { biome: 'coast', signs: 'us', ocean: { from: 'west', offset: 120 }, lighthouse: { from: 'west', dist: 900 } },
   'glasswater-lakes': { biome: 'lakes', signs: 'us' },
+  'flanders-finale': { biome: 'lowlands', floor: 6, signs: 'be', lights: [{ at: 'start', radius: 500, count: 70 }, { atM: 16200, radius: 300, count: 50 }] },
+  'amstel-limburg': { biome: 'lowlands', floor: 55, signs: 'nl', lights: [{ at: 'start', radius: 1200, count: 260 }, { atM: 21000, radius: 350, count: 60 }] },
+  'three-bears': { biome: 'bayhills', floor: 40, signs: 'us', plainLights: true, lights: [{ at: 'start', radius: 900, count: 160 }] },
+  'marin-ave': { biome: 'bayhills', floor: 5, signs: 'us', plainLights: true, ocean: { from: 'start', bearing: 265, offset: 1800 }, lights: [{ at: 'start', radius: 1600, count: 420 }, { at: 'end', radius: 900, count: 160 }] },
   'juniper-mesa': { biome: 'mesa', signs: 'us' },
 };
 
@@ -574,6 +578,65 @@ BIOMES.tam = {
   water: BIOMES.coast.water,
 };
 
+// Flemish Ardennes / South Limburg: green pasture, ploughed and young-crop
+// fields, beech woods on the steep sides, poplar rows; narrow lanes with no
+// centre line. Low hills under a hazier sky.
+BIOMES.lowlands = {
+  relief: { hillAmp: 22, hillWave: 520, mountains: { amp: 90, wave: 2400, near: 380, far: 3600, bias: 0.45 }, view: 9000 },
+  sky: {
+    golden: { top: '#3A4C7E', mid: '#C49A92', horizon: '#F6D4AC', glow: '#FFD3A0', glowAmt: 0.75 },
+    dusk: { top: '#222C50', mid: '#94708A', horizon: '#E6B494', glow: '#F0B48E', glowAmt: 0.55 },
+    night: { top: '#141A30', mid: '#2A3050', horizon: '#5A5470', glow: '#5A5470', glowAmt: 0.22 },
+    day: { top: '#6A92C2', mid: '#A8C0D6', horizon: '#E4E4DC', glow: '#FFF2DA', glowAmt: 0.4 },
+  },
+  fog: {
+    golden: { color: '#B89C92', near: 160, far: 4200, max: 0.62 },
+    dusk: { color: '#86707E', near: 140, far: 3800, max: 0.66 },
+    night: { color: '#2E3248', near: 110, far: 3000, max: 0.72 },
+    day: { color: '#C2C6C2', near: 220, far: 5600, max: 0.55 },
+  },
+  ground: {
+    warm: {
+      pasture: ['#8AA25A', '#3A4A2C'],
+      crop: ['#A6B062', '#4C5430'],
+      field: ['#AE9466', '#544434'],
+      wood: ['#4E6638', '#22301C'],
+      rock: ['#A09888', '#4E4A4C'],
+      verge: ['#7E9652', '#36442A'],
+      cut: ['#8E7C62', '#463A2E'],
+    },
+    night: {
+      pasture: ['#4C5A3C', '#1E2619'],
+      crop: ['#56603E', '#22281A'],
+      field: ['#5E5444', '#28221C'],
+      wood: ['#2E3C2A', '#141C14'],
+      rock: ['#5A5664', '#26242E'],
+      verge: ['#46523A', '#1C2218'],
+      cut: ['#4E463C', '#221E1A'],
+    },
+  },
+  props: {
+    warm: { oak: [['#5A7440', '#26341E'], ['#4E6A3A', '#22301C'], ['#66803F', '#2C3820']], cypress: [['#4E6A3C', '#1E2A1A'], ['#5A7444', '#22301E']], tuft: ['#9AAE62', '#46522E'], post: ['#7A6A58', '#3E342C'], milepost: ['#3E5A4A', '#1E2C26'], rock: [['#A09888', '#4E4A4C']], trunk: ['#4A3A30', '#241C18'] },
+    night: { oak: [['#3E4E34', '#1A2216'], ['#38482F', '#161E14']], cypress: [['#2E3C2A', '#121A12']], tuft: ['#56603E', '#22281A'], post: ['#5A4E44', '#24201C'], milepost: ['#2E4438', '#141E1A'], rock: [['#5A5664', '#26242E']], trunk: ['#3A2E2A', '#1A1616'] },
+  },
+  road: {
+    warm: { asphalt: '#46423E', edge: '#DCD2C0', centre: null, shoulder: '#5E6A44', cobbles: '#8E857A' },
+    night: { asphalt: '#2C2A28', edge: '#8E887C', centre: null, shoulder: '#2E3424', cobbles: '#55504A' },
+  },
+  skyline: {
+    warm: [{ dist: 18000, lo: 30, hi: 150, rough: 0.25, peaks: 7, lit: '#8E8A9A', shade: '#5C5E74', fog: 0.5 }],
+    night: [{ dist: 18000, lo: 30, hi: 150, rough: 0.25, peaks: 7, lit: '#40445E', shade: '#2A2E46', fog: 0.45 }],
+  },
+  scatter: [
+    { kind: 'oak', along: 10, band: [10, 70], area: 2.8, on: ['wood'], scale: [6, 11], colors: 'oak', far: true },
+    { kind: 'oak', area: 0.1, on: ['pasture', 'crop'], band: [12], scale: [5, 9], colors: 'oak', far: true },
+    { kind: 'cypress', along: 2.2, band: [9, 40], scale: [10, 17], colors: 'cypress', far: true },
+    { kind: 'tuft', along: 50, band: [3.4, 12], scale: [0.4, 0.9], colors: 'tuft' },
+  ],
+  furniture: { fence: { every: 40 } },
+  lightsColor: ['#FFD49A', '#FFF0D6'],
+};
+
 export const BIOME_NAMES = Object.keys(BIOMES);
 
 // ---------------------------------------------------------------- grading
@@ -750,6 +813,7 @@ export function themeFor(route, timeOfDay = 'golden') {
     centre: gradeHex(roadSet.centre, tod),
     centreStyle: roadSet.centreStyle ?? (roadSet.centre ? 'dash' : null),
     shoulder: gradeHex(roadSet.shoulder, tod),
+    cobbles: gradeHex(roadSet.cobbles ?? (tod === 'night' ? '#55504A' : '#8C8378'), tod),
     halfWidth: 2.7,
     shoulderWidth: 0.7,
     kind: 'road',

@@ -102,7 +102,8 @@ function Tiles({ c, s }) {
 function routeMeta(def, units) {
   const len = U.distance(def.lengthM, units);
   const gain = U.elevation(def.gainM, units);
-  if (def.loop) return `${len.value} ${len.unit} loop · +${gain.value} ${gain.unit}`;
+  const climbs = def.climbs?.length ? ` · ${def.climbs.length} climb${def.climbs.length > 1 ? 's' : ''}` : '';
+  if (def.loop) return `${len.value} ${len.unit} loop · +${gain.value} ${gain.unit}${climbs}`;
   return `${len.value} ${len.unit} · +${gain.value} ${gain.unit} · ${def.avgGradientPct} %`;
 }
 

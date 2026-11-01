@@ -97,3 +97,28 @@ test('GPX import with noisy elevation', () => {
   assert.ok(Math.abs(s.lon + 122.6) < 1e-9 && s.lat > 37.9);
   assert.throws(() => routeFromGpx('<gpx></gpx>'));
 });
+
+test('surfaces and named climbs: cobbles, "X to the top", next climb within 800 m', () => {
+  const r = buildRoute({
+    id: 'berg-test',
+    name: 'Berg',
+    loop: true,
+    resolutionM: 100,
+    startElevationM: 20,
+    gradientsPct: [0, 0, 0, 0, 0, 10, 10, 10, 0, 0, -10, -10, -10, 0, 0, 0, 0, 0, 0, 0],
+    texture: 0,
+    surfaces: [[480, 820, 'cobbles']],
+    climbs: [{ name: 'Muur', startM: 500, endM: 800 }],
+  });
+  assert.equal(r.surfaceAt(100), 'tarmac');
+  assert.equal(r.surfaceAt(600), 'cobbles');
+  assert.equal(r.stateAt(600).surface, 'cobbles');
+  assert.equal(r.climbNear(100).metres, 400);
+  assert.deepEqual(r.climbNear(300), { climb: r.climbs[0], on: false, metres: 200 });
+  const on = r.climbNear(650);
+  assert.ok(on.on && on.metres === 150);
+  assert.equal(r.climbNear(650, -1), null); // riding back down
+  // after the top: next lap's climb only once it's within 800 m
+  assert.equal(r.climbNear(1000), null);
+  assert.equal(r.climbNear(1800).metres, 700);
+});

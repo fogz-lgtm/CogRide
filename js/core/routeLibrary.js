@@ -1,5 +1,6 @@
-// The built-in route library: real climbs (with their real road shape) and
-// calm fictional loops. Geometry is loaded lazily, one route at a time.
+// The built-in route library: real climbs and real loops (with their real
+// road shape) and calm fictional loops. Geometry is loaded lazily, one route
+// at a time.
 
 import { buildRoute } from './route.js';
 
@@ -21,7 +22,8 @@ export async function loadRoute(id, fetchImpl = globalThis.fetch) {
   const def = catalog.find((r) => r.id === id);
   if (!def) throw new Error(`Unknown route ${id}`);
   let geometry = null;
-  if (!def.loop) {
+  // Real roads have geometry; the fictional loops are drawn from their turns.
+  if (!def.loop || def.geometry) {
     const res = await fetchImpl(new URL(`geometry/${id}.json`, BASE)).catch(() => null);
     if (res?.ok) geometry = await res.json();
   }

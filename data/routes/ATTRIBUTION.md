@@ -7,7 +7,10 @@
   These files are a derived database and are likewise offered under the ODbL.
 - **Elevation** used to fit the gradient tables in `catalog.json`: AWS Terrain
   Tiles (Mapzen), including USGS 3DEP, EU-DEM (Copernicus) and SRTM.
-- Gradient tables were fitted at 500 m and cross-checked against published
-  length, gain and landmark elevations; sources per route are in
-  `catalog.json`. The four loops (Fogline Coast, Cathedral Redwoods,
-  Glasswater Lakes, Juniper Mesa) are fictional.
+- Gradient tables were fitted at 500 m (the long climbs) or 50–100 m (the
+  punchy routes: Flanders Finale, Amstel Gold Hills, Three Bears, Marin
+  Avenue) and cross-checked against published length, gain and landmark
+  elevations; sources per route are in `catalog.json`. Cobbled stretches come
+  from the road-surface tags in the same Overture/OpenStreetMap data. The four
+  loops Fogline Coast, Cathedral Redwoods, Glasswater Lakes and Juniper Mesa
+  are fictional.

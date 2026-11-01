@@ -260,6 +260,7 @@ function routeData(route) {
     elevation: Float64Array.from(route.elevation),
     minElevation: route.minElevation,
     maxElevation: route.maxElevation,
+    surfaces: route.surfaces ?? null,
   };
 }
 

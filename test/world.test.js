@@ -70,6 +70,26 @@ test('biomes: the spec routes land in the right palettes', () => {
   assert.equal(r('mount-diablo-south-gate'), 'bayhills');
   assert.equal(r('cathedral-redwoods'), 'redwood');
   assert.equal(r('fogline-coast'), 'coast');
+  assert.equal(r('flanders-finale'), 'lowlands');
+  assert.equal(r('amstel-limburg'), 'lowlands');
+  assert.equal(r('three-bears'), 'bayhills');
+  assert.equal(r('marin-ave'), 'bayhills');
+});
+
+test('the Flemish lanes: green fields, no centre line, cobbles laid in stone', () => {
+  const route = load('flanders-finale');
+  const theme = themeFor(route, 'golden');
+  assert.equal(theme.road.centre, null);
+  assert.ok(theme.ground.pasture && theme.ground.wood && theme.ground.field);
+  const ctx = createContext(route, theme);
+  const kopp = route.climbs[0];
+  const s = route.stateAt((kopp.startM + kopp.endM) / 2);
+  const leaf = buildLeaf(ctx, 0, Math.floor(s.x / LEVELS[0].size), Math.floor(s.z / LEVELS[0].size));
+  assert.ok(leaf.triangles > 1000 && leaf.triangles < 32000, `${leaf.triangles}`);
+  // every road row kept on the cobbles (so the stones read as stones)
+  const next = ctx.roadRows[0];
+  const i = Math.round(kopp.startM / 5) + 10;
+  assert.equal(next[i], i + 1);
 });
 
 function syntheticRun({ lat = 37.8605, lon = -122.2201, withEle = true } = {}) {

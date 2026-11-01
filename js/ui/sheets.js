@@ -68,15 +68,25 @@ export function PlanSheet({ c, s, sheet }) {
     const d = plan.def;
     const spark = sparkline(d, 60);
     figure = html`<${Scene} region=${regionFor(d)} tod=${tod} seed=${d.id} w=${366} h=${150} profile=${spark} />`;
-    title = [d.name, d.loop ? 'a loop' : d.region?.split('(')[0].trim() || ''];
+    // Real loops say where they are; the fictional ones are just "a loop".
+    title = [d.name, d.loop && !d.geometry ? 'a loop' : d.region?.split('(')[0].trim() || ''];
     sub = firstSentences(d.description);
     const len = U.distance(d.lengthM, units);
     const gain = U.elevation(d.gainM, units);
     stats = [
       ['Distance', len.value, len.unit],
       ['Climb', gain.value, gain.unit],
-      d.loop ? ['Laps', '∞', ''] : ['Average', d.avgGradientPct, '%'],
+      d.loop && d.climbs?.length ? ['Steepest', Math.round(Math.max(...d.climbs.map((k) => k.max100mPct))), '%'] : d.loop ? ['Laps', '∞', ''] : ['Average', d.avgGradientPct, '%'],
     ];
+    if (d.climbs?.length) {
+      extra = html`<ul class="climblist">
+        ${d.climbs.map((k) => {
+          const at = U.distance(k.startM, units, 1);
+          const len = U.distance(k.lengthM, units, 1);
+          return html`<li><b>${k.name}${k.surface === 'cobbles' ? html`<span class="chip">cobbles</span>` : ''}</b><span>${len.value} ${len.unit} · ${k.avgPct} % · max ${Math.round(k.max100mPct)} %</span><em>at ${at.value} ${at.unit}</em></li>`;
+        })}
+      </ul>`;
+    }
   } else if (plan.kind === 'run' || plan.kind === 'gpx' || plan.kind === 'segment') {
     const r = plan.route;
     figure = html`<${Scene} region="bayarea" tod=${tod} seed=${r.id} w=${366} h=${150} profile=${Array.from({ length: 60 }, (_, i) => r.elevationAt((r.length * i) / 59))} />`;

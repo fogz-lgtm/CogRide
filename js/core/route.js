@@ -100,6 +100,27 @@ export class Route {
     this.maxElevation = max;
   }
 
+  // Road surface at d: 'tarmac' unless the route marks a stretch (cobbles).
+  surfaceAt(d) {
+    for (const [a, b, kind] of this.surfaces ?? []) if (d >= a && d <= b) return kind;
+    return 'tarmac';
+  }
+
+  // The named climb you're on, or the next one within 800 m, riding forwards
+  // ({ climb, on, metres }: metres to its top, or to its foot), else null.
+  climbNear(d, direction = 1) {
+    const climbs = this.climbs ?? [];
+    if (!climbs.length || direction < 0) return null;
+    const on = climbs.find((k) => d >= k.startM && d <= k.endM);
+    if (on) return { climb: on, on: true, metres: on.endM - d };
+    let best = null;
+    for (const k of climbs) {
+      const ahead = k.startM - d + (this.loop && k.startM < d ? this.length : 0);
+      if (ahead > 0 && ahead < 800 && (!best || ahead < best.metres)) best = { climb: k, on: false, metres: ahead };
+    }
+    return best;
+  }
+
   // Lap length: a loop is ridden once around; out-and-back is up and down again.
   get lapLength() {
     return this.loop ? this.length : this.length * 2;
@@ -156,6 +177,7 @@ export class Route {
       z: this.sample(this.z, d),
       elevation: this.elevationAt(d),
       grade: this.gradeAt(d) * direction,
+      surface: this.surfaceAt(d),
       heading,
       lat: this.lat ? this.sample(this.lat, d) : null,
       lon: this.lon ? this.sample(this.lon, d) : null,

@@ -24,9 +24,14 @@ gears (no Click): https://fogz-lgtm.github.io/CogRide/flux/ — see
   locks the left puck unless the Zwift app unlocked it in the last day; then
   B on the right puck shifts easier, so one puck does both.
 - **Real climbs in 3D:** Alpe d'Huez, Ventoux, Tourmalet, Stelvio, Sa Calobra,
-  Mount Diablo, Mount Tam, Old La Honda, Claremont, South Park, Hawk Hill. Each
-  follows its real road and real elevation. There are also four calm loops,
-  your own GPX files, and your Strava runs and hikes as rides.
+  Mount Diablo, Mount Tam, Old La Honda, Claremont, South Park, Hawk Hill and
+  the Marin Avenue wall. Each follows its real road and real elevation.
+- **Punchy loops on real roads:** the Flanders finale (Koppenberg, Oude
+  Kwaremont, Paterberg, on cobbles that roll slower), the Amstel Gold hills
+  (Keutenberg, Eyserbosweg, Fromberg, finishing on the Cauberg) and the Three
+  Bears in Orinda. The screen names each climb as you reach it ("Paterberg ·
+  0.2 mi to the top"). There are also four calm fictional loops, your own GPX
+  files, and your Strava runs and hikes as rides.
 - **Workouts in ERG.** Built-in workouts, your own (a one-line-per-block text
   format), or Zwift `.zwo` files. A Click nudges the target 1 % of FTP. If you
   stop pedalling, ERG backs off instead of spiralling.

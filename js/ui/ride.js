@@ -299,7 +299,11 @@ export function raceText(race) {
 function caption(route, snap, facts, units) {
   if (!route || !snap.route) return { kicker: shortName(route?.name ?? ''), title: null };
   const r = snap.route;
-  const kicker = shortName(route.name);
+  const cobbles = route.surfaceAt?.(r.d) === 'cobbles';
+  const kicker = `${shortName(route.name)}${cobbles ? ' · cobbles' : ''}`;
+  const near_ = route.climbNear?.(r.d, r.direction) ?? null;
+  if (near_?.on) return { kicker, title: html`${near_.climb.name} <em>· ${near(near_.metres, units)} to the top</em>` };
+  if (near_) return { kicker, title: html`${near_.climb.name} <em>in ${near(near_.metres, units)}</em>` };
   if (route.loop) {
     const left = route.length - r.d;
     return { kicker, title: html`Lap ${r.lap + 1} <em>· ${U.distance(left, units).value} ${U.distance(left, units).unit} to go</em>` };

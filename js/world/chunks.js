@@ -118,6 +118,7 @@ export function createContext(route, theme, prev = null) {
     shoulder: [rgb(R.shoulder), shade(R.shoulder, 0.75)],
     cut: ground.cut ?? ground.rock ?? [rgb('#8A7A70'), rgb('#4A4040')],
     verge: ground.verge ?? [rgb(R.shoulder), shade(R.shoulder, 0.7)],
+    cobbles: [rgb(R.cobbles ?? '#8C8378'), shade(R.cobbles ?? '#8C8378', 0.56)],
   };
   if (trail) {
     // Singletrack: grass verges right up to the packed earth.
@@ -153,17 +154,19 @@ export function createContext(route, theme, prev = null) {
     rampLo: theme.timeOfDay === 'night' ? -0.35 : -0.25,
     rampHi: theme.timeOfDay === 'night' ? 0.9 : 0.8,
     n: route.x.length,
+    // Cobbled stretches ([fromM, toM, 'cobbles']) by road sample index.
+    cobbles: (route.surfaces ?? []).filter((s) => s[2] === 'cobbles').map(([a, b]) => [a / (route.length / (route.x.length - 1)), b / (route.length / (route.x.length - 1))]),
     _q: { distance: 0, y: 0, d: 0, side: 0, i: 0, t: 0 },
   };
   ctx.classify = CLASSIFIERS[theme.biome] ?? CLASSIFIERS.bayhills;
-  ctx.roadRows = roadRowsReused && (prev.theme.road.centreStyle === 'dash') === (R.centreStyle === 'dash') ? roadRowsReused : ROAD_STRIDE.map((stride, level) => simplifyRoad(route, stride, ROAD_SIMPLIFY[level], level === 0 && R.centreStyle === 'dash'));
+  ctx.roadRows = roadRowsReused && (prev.theme.road.centreStyle === 'dash') === (R.centreStyle === 'dash') ? roadRowsReused : ROAD_STRIDE.map((stride, level) => simplifyRoad(route, stride, ROAD_SIMPLIFY[level], level === 0 && R.centreStyle === 'dash', level === 0 ? ctx.cobbles : []));
   return ctx;
 }
 
 // Greedy, route-global row selection (so neighbouring chunks agree): a row
 // is kept when skipping it would bend the chord too far from the road.
 // Returns next[i] = index of the next kept row after kept row i (−1 if not kept).
-function simplifyRoad(route, stride, lim, keepAll) {
+function simplifyRoad(route, stride, lim, keepAll, dense = []) {
   const xs = route.x;
   const zs = route.z;
   const ys = route.elevation;
@@ -173,8 +176,9 @@ function simplifyRoad(route, stride, lim, keepAll) {
   keep[n - 1] = 1;
   let last = 0;
   for (let i = stride; i < n - 1; i += stride) {
-    if (keepAll) {
+    if (keepAll || dense.some(([a, b]) => i >= a && i <= b)) {
       keep[i] = 1;
+      last = i;
       continue;
     }
     const j = Math.min(n - 1, i + stride);
@@ -254,6 +258,15 @@ const CLASSIFIERS = {
     if (y < 330 + n1 * 70 && (north > -0.15 || n1 > 0.15)) return 'grove';
     return CLASSIFIERS.bayhills(c, y, s, north, d, n1, n2);
   },
+  lowlands(c, y, s, north, d, n1, n2) {
+    if (s > 1.1) return 'rock';
+    if (d < c.vergeD) return 'verge';
+    // Woods on the steep and north-facing sides, a patchwork of fields elsewhere.
+    const wood = n1 * 0.7 + (s - 0.22) * 1.4 + north * 0.35 - (s < 0.08 ? 0.3 : 0);
+    if (wood > 0.42) return 'wood';
+    const f = n2 * 0.8 + n1 * 0.25;
+    return f > 0.28 ? 'field' : f < -0.3 ? 'crop' : 'pasture';
+  },
   redwood(c, y, s, north, d, n1, n2) {
     if (s > 1.2) return 'rock';
     if (d < c.vergeD) return 'verge';
@@ -319,13 +332,13 @@ function paintGround(ctx, ax, ay, az, bx, by, bz, cx, cy, cz, d, noise) {
 }
 
 // Painterly colour for any surface with [lit, shade]; returns tmpC.
-function paintSurface(ctx, pal, ax, ay, az, bx, by, bz, cx, cy, cz, noise) {
+function paintSurface(ctx, pal, ax, ay, az, bx, by, bz, cx, cy, cz, noise, mottle = 0.08) {
   faceNormal(tmpN, ax, ay, az, bx, by, bz, cx, cy, cz);
   const L = ctx.L;
   const t = ramp(tmpN[0] * L[0] + tmpN[1] * L[1] + tmpN[2] * L[2], ctx.rampLo, ctx.rampHi);
   const lit = pal[0];
   const sh = pal[1];
-  const k = 1 + (noise - 0.5) * 0.08;
+  const k = 1 + (noise - 0.5) * mottle;
   tmpC[0] = (sh[0] + (lit[0] - sh[0]) * t) * k;
   tmpC[1] = (sh[1] + (lit[1] - sh[1]) * t) * k;
   tmpC[2] = (sh[2] + (lit[2] - sh[2]) * t) * k;
@@ -636,11 +649,15 @@ function buildRoad(ctx, buf, grid, level, x0, z0, size) {
     const ca = A.cols;
     const cb = sameLayout(ca, B.cols) ? B.cols : matchCols(ca, B, ctx);
     const dash = Math.floor((i * 5) / 6) % 2 === 0;
+    const cobbled = ctx.cobbles.some(([a, b]) => j > a && i < b);
     for (let k = 0; k < ca.length - 1; k++) {
       const band = ca[k].b;
       if (!band) continue;
       let pal;
-      switch (band) {
+      // Kasseien: stone the whole carriageway, no paint, mottled per face.
+      const stone = cobbled && (band === 'asphalt' || band === 'edge' || band === 'centre' || band === 'dash');
+      if (stone) pal = R.cobbles;
+      else switch (band) {
         case 'asphalt':
           pal = R.asphalt;
           break;
@@ -677,6 +694,35 @@ function buildRoad(ctx, buf, grid, level, x0, z0, size) {
       const p11z = -(B.z + B.rz * b1.o);
       const noise = hash3(i, k, 71);
       buf.at((p00x + p11x) / 2, (p00z + p11z) / 2);
+      if (stone) {
+        // Setts: a mosaic of ~0.9 m × 2.5 m stones, each its own shade.
+        const nc = Math.max(1, Math.round(Math.abs(a1.o - a0.o) / 0.9));
+        const nr = Math.max(1, Math.round((j - i) * 2));
+        for (let r = 0; r < nr; r++) {
+          for (let c = 0; c < nc; c++) {
+            const P = (u, v) => {
+              const x0 = p00x + (p01x - p00x) * u;
+              const z0 = p00z + (p01z - p00z) * u;
+              const y0 = a0.y + (a1.y - a0.y) * u;
+              const x1 = p10x + (p11x - p10x) * u;
+              const z1 = p10z + (p11z - p10z) * u;
+              const y1 = b0.y + (b1.y - b0.y) * u;
+              return [x0 + (x1 - x0) * v, y0 + (y1 - y0) * v, z0 + (z1 - z0) * v];
+            };
+            const [q00, q01, q10, q11] = [P(c / nc, r / nr), P((c + 1) / nc, r / nr), P(c / nc, (r + 1) / nr), P((c + 1) / nc, (r + 1) / nr)];
+            faceNormal(tmpN, ...q00, ...q01, ...q11);
+            const up = tmpN[1] >= 0;
+            const S1 = up ? [...q00, ...q01, ...q11] : [...q00, ...q11, ...q01];
+            const S2 = up ? [...q00, ...q11, ...q10] : [...q00, ...q10, ...q11];
+            const shadeN = hash3(i * 4 + r, k * 16 + c, 13 + ((c + r) & 1) * 7);
+            for (const T of [S1, S2]) {
+              paintSurface(ctx, pal, T[0], T[1], T[2], T[3], T[4], T[5], T[6], T[7], T[8], shadeN, 0.36);
+              buf.tri(T[0], T[1], T[2], T[3], T[4], T[5], T[6], T[7], T[8], tmpC, AUX_ROAD);
+            }
+          }
+        }
+        continue;
+      }
       // Up-facing winding for both triangles of the quad.
       faceNormal(tmpN, p00x, a0.y, p00z, p01x, a1.y, p01z, p11x, b1.y, p11z);
       const up = tmpN[1] >= 0;

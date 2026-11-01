@@ -5,7 +5,7 @@
 // trainer should do (ride the road in the current gear, or hold ERG watts).
 // The UI only reads `snapshot()` and listens for events.
 
-import { RiderPhysics } from '../core/physics.js';
+import { RiderPhysics, CRR } from '../core/physics.js';
 import { START_GEAR, GEAR_COUNT, clampGear, ratioFor, feltGrade, slew } from '../core/gearing.js';
 import { HrAutopilot } from '../core/autopilot.js';
 import { stepAt, targetFraction, totalDuration } from '../workouts.js';
@@ -227,6 +227,8 @@ export class RideEngine extends EventTarget {
 
     if (this.state === 'riding') {
       const before = this.routeState();
+      // Cobbles roll slower than tarmac (Zwift's rolling-resistance table).
+      this.physics.crr = CRR[before?.surface] ?? CRR.tarmac;
       this.physics.step(dt, power, (before?.grade ?? 0) / 100, before?.elevation ?? 0);
       const after = this.routeState();
       const moving = this.physics.speed > 0.3 || power > 10;

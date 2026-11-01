@@ -194,3 +194,18 @@ test('autopilot: a collapsing cadence bails out to a flat road, then eases back 
   assert.ok(sim.target.watts < engine.snapshot().autopilot.watts, `soft start: ${sim.target.watts}`);
   assert.ok(events.some(([t, d]) => t === 'bailout' && d.active));
 });
+
+test('cobbles roll slower than tarmac at the same power', () => {
+  const ride = (surfaces) => {
+    const { engine, run } = rig({ effort: 200 });
+    engine.setRoute(buildRoute({ id: 'cobble-test', name: 'Cobbles', loop: true, resolutionM: 250, startElevationM: 10, gradientsPct: [0, 0, 0, 0, 0, 0, 0, 0], texture: 0, surfaces }));
+    engine.start();
+    run(90);
+    return engine;
+  };
+  const tarmac = ride([]);
+  const cobbles = ride([[0, 2000, 'cobbles']]);
+  assert.equal(tarmac.physics.crr, 0.004);
+  assert.equal(cobbles.physics.crr, 0.0065);
+  assert.ok(cobbles.snapshot().distance < tarmac.snapshot().distance - 10, `${cobbles.snapshot().distance} vs ${tarmac.snapshot().distance}`);
+});

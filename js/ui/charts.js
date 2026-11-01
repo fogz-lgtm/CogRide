@@ -227,6 +227,7 @@ const LANDS = {
   redwoods: ['#4e5a54', '#3a4a40', '#2a3528', '#18201a'],
   lakes: ['#6c7290', '#566a74', '#4f6150', '#1f2a24'],
   mesa: ['#9b6f7c', '#b07a5e', '#a96f4d', '#4a2e22'],
+  lowlands: ['#76789a', '#6c845e', '#7f9a55', '#33432a'],
 };
 LANDS.bayhills = LANDS.bayarea;
 LANDS.redwood = LANDS.redwoods;
@@ -248,7 +249,7 @@ export function Scene({ region = 'bayarea', tod = 'dusk', seed = 'x', w = 366, h
   const layers = land.map((color, i) => {
     const depth = i / (land.length - 1); // 0 far .. 1 near
     const base = h * (0.5 + depth * 0.3);
-    const amp = h * (0.2 - depth * 0.09) * (region === 'alpine' ? 1.5 : region === 'redwoods' ? 0.5 : 1);
+    const amp = h * (0.2 - depth * 0.09) * (region === 'alpine' ? 1.5 : region === 'redwoods' || region === 'lowlands' ? 0.5 : 1);
     const n = 9 + i * 3;
     const phase = rand() * 10;
     const pts = [];
