@@ -10,6 +10,7 @@ import { sparkline } from '../core/routeLibrary.js';
 import { regionFor, timeOfDayNow } from '../world/themes.js';
 import { AUTOPILOT_MINUTES, autopilotPlan, vertPlan, ERG_ROAD } from '../app/plans.js';
 import { loadBest } from '../app/history.js';
+import { roadDifficulty } from '../app/prefs.js';
 import { totalDuration } from '../workouts.js';
 import { estimateTss } from './home.js';
 import { parseWeight } from '../core/units.js';
@@ -168,6 +169,8 @@ export function PlanSheet({ c, s, sheet }) {
   const roadKey = plan.kind === 'route' ? plan.def?.id ?? plan.id : plan.route?.id ?? (['vert', 'free'].includes(plan.kind) ? routeId : null);
   const best = roadKey && ['route', 'run', 'gpx', 'segment', 'vert', 'free'].includes(plan.kind) ? loadBest(roadKey) : null;
   const roadDiff = roadKey ? prefs.routeDifficulty?.[roadKey] ?? null : null;
+  // "Default" here is the road's own when it asks for more than your usual.
+  const roadOwn = roadKey ? roadDifficulty({ ...prefs, routeDifficulty: {} }, roadKey, s.catalog.find((d) => d.id === roadKey)) : null;
   const setRoadDiff = (v) => {
     const next = { ...(prefs.routeDifficulty || {}) };
     if (v == null) delete next[roadKey];
@@ -178,7 +181,7 @@ export function PlanSheet({ c, s, sheet }) {
     roadKey && ['route', 'run', 'gpx', 'segment', 'vert', 'free'].includes(plan.kind)
       ? html`<div class="section">
           ${best && html`<${Row} title=${`Your best here: ${clock(best.timeS)}`} sub=${`${new Date(best.at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}${prefs.ghost !== false ? ' · its ghost rides with you' : ''}`}><span></span><//>`}
-          <${Row} title="Difficulty here" sub=${roadDiff == null ? `Default · ${Math.round(prefs.difficulty * 100)} %` : 'This road only'}>
+          <${Row} title="Difficulty here" sub=${roadDiff != null ? 'This road only' : roadOwn != null ? `Default · ${Math.round(roadOwn * 100)} % on this road` : `Default · ${Math.round(prefs.difficulty * 100)} %`}>
             <${Seg} value=${roadDiff} options=${[[null, 'Default'], [0.25, '25'], [0.5, '50'], [0.75, '75'], [1, '100']]} onChange=${setRoadDiff} />
           <//>
         </div>`

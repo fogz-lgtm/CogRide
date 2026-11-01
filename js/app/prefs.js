@@ -77,6 +77,16 @@ export function hrZoneIndex(hr, zones = HR_ZONES_DEFAULT) {
 }
 
 // Engine settings derived from the profile.
+// This road's trainer difficulty, or null for your usual one: yours for the
+// road if you set it, else the road's own (the punchy routes ask for more),
+// never below your usual difficulty.
+export function roadDifficulty(p, roadKey, def = null) {
+  const mine = roadKey ? p.routeDifficulty?.[roadKey] : null;
+  if (mine != null) return mine;
+  if (def?.difficulty != null && def.difficulty > p.difficulty) return def.difficulty;
+  return null;
+}
+
 export function engineSettings(p) {
   return {
     ftp: p.ftp,

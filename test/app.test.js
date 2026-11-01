@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { numberWords, rideHeadline, ergHeadline, z2Headline, workPosition, tonightsPick, greeting, PRESET_WORKOUTS } from '../js/app/plans.js';
 import { packSamples, unpackSamples } from '../js/app/history.js';
-import { HR_ZONES_DEFAULT, hrZoneIndex, zone2, DEFAULT_PREFS, engineSettings } from '../js/app/prefs.js';
+import { HR_ZONES_DEFAULT, hrZoneIndex, zone2, DEFAULT_PREFS, engineSettings, roadDifficulty } from '../js/app/prefs.js';
 import { clock, countdown, powerZone, ZoneLatch, shortName } from '../js/ui/format.js';
 import { parseWorkoutText } from '../js/workouts.js';
 
@@ -117,4 +117,15 @@ test('workouts and the ramp test always ride the flat loop; other rides keep the
   assert.equal(roadIdFor(autopilotPlan(45), prefs), 'tourmalet-luz');
   assert.equal(roadIdFor({ kind: 'free', id: 'free' }, prefs), 'fogline-coast');
   assert.equal(roadIdFor({ kind: 'route', id: 'alpe-dhuez' }, prefs), 'alpe-dhuez');
+});
+
+test('punchy roads ask for more trainer difficulty; your own choice wins', () => {
+  const p = { ...DEFAULT_PREFS, difficulty: 0.5, routeDifficulty: {} };
+  const kopp = { id: 'flanders-finale', difficulty: 0.75 };
+  assert.equal(roadDifficulty(p, 'flanders-finale', kopp), 0.75);
+  assert.equal(roadDifficulty(p, 'alpe-dhuez', { id: 'alpe-dhuez' }), null); // your usual
+  // never easier than your usual difficulty
+  assert.equal(roadDifficulty({ ...p, difficulty: 1 }, 'flanders-finale', kopp), null);
+  // a difficulty you set for this road always wins, even an easier one
+  assert.equal(roadDifficulty({ ...p, routeDifficulty: { 'flanders-finale': 0.25 } }, 'flanders-finale', kopp), 0.25);
 });
